@@ -1,0 +1,66 @@
+name: Build [mainstream] repo
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 1"   # weekly (Mon 06:00 UTC) — pick up -git package updates
+  push:
+    branches: [master, main]
+    paths:
+      - packages.list
+      - build-repo.sh
+      - .github/workflows/build.yml
+
+permissions:
+  contents: write          # publish the release assets
+
+concurrency:
+  group: build-mainstream-repo
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm git gnupg
+
+      - uses: actions/checkout@v4
+
+      - name: Create build user (makepkg refuses to run as root)
+        run: |
+          useradd -m builder
+          printf 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          install -d -m700 -o builder -g builder /home/builder/.gnupg
+          printf '%s' "$GPG_PRIVATE_KEY" | runuser -u builder -- gpg --batch --import
+          # Trust our own key so makepkg --sign doesn't prompt.
+          runuser -u builder -- bash -c \
+            "gpg --batch --command-fd 0 --edit-key '${{ secrets.GPG_KEY_ID }}' trust quit <<<'5
+            y'"
+
+      - name: Build signed repo
+        run: |
+          runuser -u builder -- env GPGKEY="${{ secrets.GPG_KEY_ID }}" \
+            bash "$GITHUB_WORKSPACE/build-repo.sh"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mainstream-repo
+          name: "[mainstream] pacman repo"
+          body: "Signed [mainstream] pacman repo. Consumed by the dots-hyprland installer and archiso. Built from packages.list."
+          files: |
+            out/mainstream.db
+            out/mainstream.db.sig
+            out/mainstream.files
+            out/*.pkg.tar.zst
+            out/*.pkg.tar.zst.sig
