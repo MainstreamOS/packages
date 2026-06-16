@@ -1,0 +1,18 @@
+pkgname=otf-space-grotesk
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Space Grotesk — proportional sans-serif derived from Space Mono"
+arch=('any')
+url="https://github.com/floriankarsten/space-grotesk"
+license=('OFL-1.1')
+makedepends=('git')
+source=("git+https://github.com/floriankarsten/space-grotesk.git#tag=2.0.0")
+sha256sums=('SKIP')
+
+package() {
+    install -dm755 "$pkgdir/usr/share/fonts/OTF"
+    install -m644 "$srcdir/space-grotesk/fonts/otf/"SpaceGrotesk-*.otf \
+        "$pkgdir/usr/share/fonts/OTF/"
+    install -Dm644 "$srcdir/space-grotesk/OFL.txt" \
+        "$pkgdir/usr/share/licenses/$pkgname/OFL.txt"
+}

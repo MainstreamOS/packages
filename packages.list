@@ -17,7 +17,7 @@ mpv-thumbfast-git
 
 # ── Fonts / themes ──
 adw-gtk-theme-git
-otf-space-grotesk::38c3-styles
+otf-space-grotesk::local
 ttf-material-symbols-variable-git::material-symbols-git
 ttf-readex-pro
 ttf-rubik-vf

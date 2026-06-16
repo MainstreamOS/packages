@@ -37,19 +37,29 @@ built=0; failed=0; failures=()
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
-    echo "════ $name  (aur repo: $base) ════"
-    dir="$WORK/$base"
-    if ! git clone --depth=1 "https://aur.archlinux.org/$base.git" "$dir" 2>&1; then
-        echo "!! clone failed: $base"; failed=$((failed+1)); failures+=("$name(clone)"); continue
+    if [ "$base" = local ]; then
+        # Build from a PKGBUILD shipped in this repo (pkgbuilds/<name>/), copied
+        # into the work dir so makepkg's src/pkg output doesn't dirty the repo.
+        echo "════ $name  (local PKGBUILD) ════"
+        if [ ! -f "$ROOT/pkgbuilds/$name/PKGBUILD" ]; then
+            echo "!! missing local PKGBUILD: pkgbuilds/$name"; failed=$((failed+1)); failures+=("$name(local)"); continue
+        fi
+        dir="$WORK/$name"; cp -r "$ROOT/pkgbuilds/$name" "$dir"
+    else
+        echo "════ $name  (aur repo: $base) ════"
+        dir="$WORK/$base"
+        if ! git clone --depth=1 "https://aur.archlinux.org/$base.git" "$dir" 2>&1; then
+            echo "!! clone failed: $base"; failed=$((failed+1)); failures+=("$name(clone)"); continue
+        fi
     fi
 
-    # Install only OFFICIAL depends/makedepends. Any AUR makedepend (rare here,
-    # e.g. 38c3-styles' html2markdown) is left out — it isn't needed for the
-    # package we want and makepkg --nodeps tolerates its absence.
+    # Install build/runtime deps that resolve from the official repos. Provider-
+    # aware (pacman -Sp), so virtuals like cargo (provided by rust, needed by
+    # topgrade) install too; AUR-only deps are skipped — we don't pull the AUR.
     deps="$(cd "$dir" && makepkg --printsrcinfo 2>/dev/null \
         | sed -nE 's/^[[:space:]]*(depends|makedepends) = //p' | sed -E 's/[<>=:].*//' | sort -u)"
     official=()
-    for d in $deps; do pacman -Si "$d" >/dev/null 2>&1 && official+=("$d"); done
+    for d in $deps; do pacman -Sp "$d" </dev/null >/dev/null 2>&1 && official+=("$d"); done
     if [ ${#official[@]} -gt 0 ]; then
         sudo pacman -S --needed --noconfirm --asdeps "${official[@]}" || true
     fi
