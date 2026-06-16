@@ -72,7 +72,20 @@ for entry in "${entries[@]}"; do
     fi
 done
 
+# Keep only the packages named in packages.list. Split AUR bases emit sibling
+# packages (qt5-avif-image-plugin alongside qt6; material-icons/woff2 fonts
+# alongside the symbols font) and makepkg's default debug option adds *-debug —
+# none of those belong in the published repo.
 shopt -s nullglob
+wanted=""; for e in "${entries[@]}"; do wanted="$wanted ${e%%::*}"; done; wanted=" $wanted "
+for f in "$OUTDIR"/*.pkg.tar.zst; do
+    pn="$(pacman -Qpq "$f" 2>/dev/null)"
+    case "$wanted" in
+        *" $pn "*) ;;
+        *) echo "  dropping unlisted package: $(basename "$f")"; rm -f "$f" "$f.sig" ;;
+    esac
+done
+
 pkgs=("$OUTDIR"/*.pkg.tar.zst)
 [ ${#pkgs[@]} -gt 0 ] || { echo "no packages produced" >&2; exit 1; }
 
