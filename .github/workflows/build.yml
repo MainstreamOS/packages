@@ -27,7 +27,7 @@ jobs:
       - name: Install tooling
         run: pacman -Syu --noconfirm git gnupg
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create build user (makepkg refuses to run as root)
         run: |
@@ -53,7 +53,7 @@ jobs:
             bash "$GITHUB_WORKSPACE/build-repo.sh"
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: mainstream-repo
           name: "[mainstream] pacman repo"
