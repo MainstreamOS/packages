@@ -15,6 +15,9 @@ nautilus-admin-gtk4
 mpv-modernz
 mpv-thumbfast-git
 
+# ── Browser ──
+zen-browser-bin
+
 # ── Fonts / themes ──
 adw-gtk-theme-git
 otf-space-grotesk::local
@@ -22,6 +25,8 @@ ttf-material-symbols-variable-git::material-symbols-git
 ttf-readex-pro
 ttf-rubik-vf
 ttf-twemoji
+breeze-plus
+darkly-bin
 
 # ── Widgets / tools ──
 wlogout
@@ -31,3 +36,7 @@ qt6-avif-image-plugin::qt5-avif-image-plugin
 # ── Optional limine + snapper integration (setup-limine-snapper.sh) ──
 limine-mkinitcpio-hook
 limine-snapper-sync
+
+# ── System / build deps ──
+ckbcomp
+cpptrace
