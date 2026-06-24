@@ -25,7 +25,7 @@ jobs:
       image: archlinux:base-devel
     steps:
       - name: Install tooling
-        run: pacman -Syu --noconfirm git gnupg
+        run: pacman -Syu --noconfirm git gnupg github-cli
 
       - uses: actions/checkout@v6
 
@@ -64,3 +64,22 @@ jobs:
             out/mainstream.files
             out/*.pkg.tar.zst
             out/*.pkg.tar.zst.sig
+
+      - name: Prune stale release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Publish only adds/overwrites; delete anything on the release this
+          # build did not produce so it stays a faithful mirror of out/. Runs
+          # after publish so the release is never left inconsistent.
+          assets=$(gh release view mainstream-repo --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' 2>/dev/null || true)
+          current=$(ls -1 out/ 2>/dev/null)
+          while read -r asset; do
+            [ -n "$asset" ] || continue
+            if ! grep -qxF "$asset" <<< "$current"; then
+              echo "pruning stale asset: $asset"
+              gh release delete-asset mainstream-repo "$asset" \
+                --repo "$GITHUB_REPOSITORY" --yes || true
+            fi
+          done <<< "$assets"
