@@ -39,4 +39,6 @@ limine-snapper-sync
 
 # ── System / build deps ──
 ckbcomp
-cpptrace
+
+# ── Shell (heavy compile; dots installs this prebuilt, source build as fallback) ──
+mainstream-quickshell-git::local
