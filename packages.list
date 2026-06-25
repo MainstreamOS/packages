@@ -33,6 +33,10 @@ wlogout
 topgrade
 qt6-avif-image-plugin::qt5-avif-image-plugin
 
+# ── Gaming (Steam Big Picture session; mainstream-gaming depends on these, MIT) ──
+gamescope-session-git
+gamescope-session-steam-git
+
 # ── Optional limine + snapper integration (setup-limine-snapper.sh) ──
 limine-mkinitcpio-hook
 limine-snapper-sync
