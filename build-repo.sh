@@ -86,6 +86,21 @@ for f in "$OUTDIR"/*.pkg.tar.zst; do
     esac
 done
 
+# GitHub Release assets can't carry the ':' epoch separator: the upload mangles
+# it (1:1.2.0 -> 1.1.2.0) and the prune step in build.yml then deletes the
+# mismatched asset, so any epoch package (e.g. nautilus-admin-gtk4-1:1.2.0-2)
+# 404s at install time. Rename epoch packages to a colon-free filename BEFORE
+# repo-add so the db's %FILENAME% matches the colon-free asset we publish. The
+# epoch stays in the package's internal %VERSION% (pacman orders from there), so
+# only the download filename changes; consumers normalise ':'->'_' to match.
+for f in "$OUTDIR"/*:*.pkg.tar.zst; do
+    [ -e "$f" ] || continue
+    safe="$(dirname "$f")/$(basename "$f" | tr ':' '_')"
+    echo "  epoch package: $(basename "$f") -> $(basename "$safe")"
+    mv -f "$f" "$safe"
+    [ -e "$f.sig" ] && mv -f "$f.sig" "$safe.sig"
+done
+
 pkgs=("$OUTDIR"/*.pkg.tar.zst)
 [ ${#pkgs[@]} -gt 0 ] || { echo "no packages produced" >&2; exit 1; }
 
