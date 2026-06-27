@@ -32,6 +32,7 @@ darkly-bin
 wlogout
 topgrade
 qt6-avif-image-plugin::qt5-avif-image-plugin
+mpris-hyprland::local
 
 # ── Gaming (Steam Big Picture session; mainstream-gaming depends on these, MIT) ──
 gamescope-session-git
