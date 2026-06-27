@@ -43,6 +43,7 @@ limine-snapper-sync
 
 # ── System / build deps ──
 ckbcomp
+python312
 
 # ── Shell (heavy compile; dots installs this prebuilt, source build as fallback) ──
 mainstream-quickshell-git::local
