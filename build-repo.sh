@@ -48,7 +48,18 @@ for entry in "${entries[@]}"; do
     else
         echo "════ $name  (aur repo: $base) ════"
         dir="$WORK/$base"
-        if ! git clone --depth=1 "https://aur.archlinux.org/$base.git" "$dir" 2>&1; then
+        # Retry the AUR clone: aur.archlinux.org is a single host and drops the
+        # occasional connection mid-clone (SSL "unexpected eof"), which otherwise
+        # fails the whole build and skips publish. 3 attempts, increasing backoff.
+        cloned=false
+        for attempt in 1 2 3; do
+            rm -rf "$dir"
+            if git clone --depth=1 "https://aur.archlinux.org/$base.git" "$dir" 2>&1; then
+                cloned=true; break
+            fi
+            [ "$attempt" -lt 3 ] && { echo "  clone attempt $attempt failed for $base; retrying in $((attempt*4))s..."; sleep $((attempt*4)); }
+        done
+        if ! $cloned; then
             echo "!! clone failed: $base"; failed=$((failed+1)); failures+=("$name(clone)"); continue
         fi
     fi
