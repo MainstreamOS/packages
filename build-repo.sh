@@ -34,6 +34,15 @@ sudo pacman -Sy --noconfirm >/dev/null
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
 built=0; failed=0; failures=()
+
+# Packages whose upstream source is a forge "tag archive" (GitLab/GitHub) that
+# the host regenerates on demand with non-reproducible gzip output, so the
+# sha256 recorded in the PKGBUILD drifts from what actually downloads and
+# makepkg fails the checksum on a tarball that is in fact correct. These skip
+# source-integrity verification; every other package keeps full checksums.
+#   ckbcomp -> console-setup-*.tar.gz from salsa.debian.org (GitLab archive)
+skip_integ_pkgs=" ckbcomp "
+
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
@@ -76,7 +85,11 @@ for entry in "${entries[@]}"; do
     fi
 
     sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
-    if ( cd "$dir" && PKGDEST="$OUTDIR" makepkg -f --noconfirm --nodeps --skippgpcheck "${sign[@]}" 2>&1 ); then
+    # AUR maintainer PGP keys aren't imported, so source PGP is skipped for all;
+    # source checksums are verified except for the unstable-tarball allowlist.
+    verify=(--skippgpcheck)
+    case "$skip_integ_pkgs" in *" $name "*) verify=(--skipinteg) ;; esac
+    if ( cd "$dir" && PKGDEST="$OUTDIR" makepkg -f --noconfirm --nodeps "${verify[@]}" "${sign[@]}" 2>&1 ); then
         built=$((built+1))
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
