@@ -1,8 +1,8 @@
 # Maintainer: mainstreamos <https://github.com/MainstreamOS>
 pkgname=mainstream-mpv
 pkgver=1.0
-pkgrel=1
-pkgdesc='MPV video player with ModernZ OSC and thumbfast seekbar thumbnails'
+pkgrel=2
+pkgdesc='MPV video player with ModernZ OSC, thumbfast thumbnails, and MPRIS control'
 url='https://github.com/MainstreamOS'
 arch=(any)
 license=(None)
@@ -10,4 +10,5 @@ depends=(
   mpv
   mpv-modernz
   mpv-thumbfast-git
+  mpv-mpris
 )
