@@ -1,0 +1,14 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=mainstream-nautilus
+pkgver=1.0
+pkgrel=1
+pkgdesc='GNOME Files with the Copy Path and Open as Administrator extensions'
+url='https://github.com/MainstreamOS'
+arch=(any)
+license=(None)
+depends=(
+  nautilus
+  nautilus-python
+  nautilus-copy-path
+  nautilus-admin-gtk4
+)

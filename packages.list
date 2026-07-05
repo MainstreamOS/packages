@@ -15,6 +15,7 @@ nautilus-admin-gtk4
 mpv-modernz
 mpv-thumbfast-git
 mainstream-mpv::local
+mainstream-nautilus::local
 
 # ── Browser ──
 zen-browser-bin
