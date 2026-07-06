@@ -1,0 +1,12 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=mainstream-xpadneo
+pkgver=1.0
+pkgrel=1
+pkgdesc='Advanced Xbox controller Bluetooth driver (full rumble, Elite paddles, battery reporting)'
+url='https://github.com/MainstreamOS'
+arch=(any)
+license=(None)
+depends=(
+  xpadneo-dkms
+  linux-headers
+)
