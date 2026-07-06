@@ -16,6 +16,7 @@ mpv-modernz
 mpv-thumbfast-git
 mainstream-mpv::local
 mainstream-nautilus::local
+mainstream-calendar::local
 
 # ── Browser ──
 zen-browser-bin

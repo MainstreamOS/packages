@@ -1,0 +1,25 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=mainstream-calendar
+pkgver=1.0
+pkgrel=1
+pkgdesc='GNOME Calendar with online-account sync and cloud file access'
+url='https://github.com/MainstreamOS'
+arch=(any)
+license=(None)
+depends=(
+  gnome-calendar
+  gnome-online-accounts-gtk
+  gvfs-goa
+  gvfs-onedrive
+  python-gobject
+)
+source=(settings-panel-shim org.gnome.Settings.service)
+sha256sums=('e96c0aadc5f474ec6dcb4ffdebb42ad7260247072ea5253a73ff74870e57f155'
+            '94a33efcb3c6e875b700b7b963fbb019dbe769a10f1aff5b120fae57e503526e')
+
+package() {
+  install -Dm755 "$srcdir/settings-panel-shim" \
+      "$pkgdir/usr/lib/mainstream/settings-panel-shim"
+  install -Dm644 "$srcdir/org.gnome.Settings.service" \
+      "$pkgdir/usr/share/dbus-1/services/org.gnome.Settings.service"
+}

@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# settings-panel-shim — answers D-Bus activation of org.gnome.Settings so
+# GNOME apps' deep links work without gnome-control-center. GNOME Calendar
+# (and Contacts/Evolution) open their "Online Accounts" option by calling
+# org.gtk.Actions.Activate("launch-panel", [(panel, ...)]) on this bus
+# name; the shim routes the online-accounts panel to the standalone
+# gnome-online-accounts-gtk manager and anything else to Mainstream
+# Settings. Registered via /usr/share/dbus-1/services/org.gnome.Settings
+# .service, so the bus starts it on demand and it exits right after.
+
+import subprocess
+import sys
+
+from gi.repository import Gio, GLib
+
+
+def spawn(argv):
+    subprocess.Popen(argv, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class SettingsShim(Gio.Application):
+    def __init__(self):
+        super().__init__(application_id="org.gnome.Settings",
+                         flags=Gio.ApplicationFlags.IS_SERVICE)
+        action = Gio.SimpleAction.new(
+            "launch-panel", GLib.VariantType.new("(sav)"))
+        action.connect("activate", self.on_launch_panel)
+        self.add_action(action)
+
+    def on_launch_panel(self, _action, parameter):
+        panel = parameter.unpack()[0] if parameter else ""
+        if panel == "online-accounts":
+            spawn(["gnome-online-accounts-gtk"])
+        else:
+            spawn(["sh", "-c", "qs -p ~/.config/quickshell/ii/settings.qml"])
+        GLib.timeout_add(500, self.quit_cb)
+
+    def do_activate(self):
+        spawn(["sh", "-c", "qs -p ~/.config/quickshell/ii/settings.qml"])
+        GLib.timeout_add(500, self.quit_cb)
+
+    def quit_cb(self):
+        self.quit()
+        return False
+
+
+app = SettingsShim()
+app.hold()
+GLib.timeout_add_seconds(10, app.quit)
+sys.exit(app.run(None))
