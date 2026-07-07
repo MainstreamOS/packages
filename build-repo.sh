@@ -28,6 +28,12 @@ trap 'rm -rf "$WORK"' EXIT
 [ -f "$LIST" ] || { echo "missing $LIST" >&2; exit 1; }
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
 
+# Enable [multilib] so lib32-* build deps (e.g. obs-vkcapture's 32-bit split)
+# resolve; the stock base-devel container ships it commented out.
+if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+    printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' | sudo tee -a /etc/pacman.conf >/dev/null
+fi
+
 # Refresh the sync dbs once so dependency installs resolve.
 sudo pacman -Sy --noconfirm >/dev/null
 

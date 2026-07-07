@@ -1,0 +1,29 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=mainstream-obs
+pkgver=1.0
+pkgrel=1
+pkgdesc='OBS Studio for content creation: Vulkan/OpenGL game capture, virtual camera, and creator plugins'
+url='https://github.com/MainstreamOS'
+arch=(any)
+license=(None)
+depends=(
+  obs-studio
+  obs-vkcapture
+  lib32-obs-vkcapture
+  obs-move-transition
+  obs-source-record
+  obs-source-clone
+  v4l2loopback-dkms
+  v4l2loopback-utils
+  linux-headers
+)
+source=(v4l2loopback.conf 90-v4l2loopback.conf)
+sha256sums=('bb87430ef8c13d597c0ffb202d001b59bb865a2637fbf2c612e977a379b06270'
+            '735c953530f94373d59ba9b7093d0b86b75dc629b174ae66e1b0818f9a739cb8')
+
+package() {
+  install -Dm644 "$srcdir/v4l2loopback.conf" \
+      "$pkgdir/usr/lib/modules-load.d/v4l2loopback.conf"
+  install -Dm644 "$srcdir/90-v4l2loopback.conf" \
+      "$pkgdir/usr/lib/modprobe.d/90-v4l2loopback.conf"
+}
