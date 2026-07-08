@@ -43,6 +43,7 @@ gamescope-session-steam-git
 xpadneo-dkms
 mainstream-xpadneo::local
 game-devices-udev
+mainstream-gaming::dots
 
 # ── Content creation (native OBS + plugins; rebuild when obs-studio bumps) ──
 obs-vkcapture
@@ -51,6 +52,9 @@ obs-move-transition
 obs-source-record
 obs-source-clone
 mainstream-obs::local
+
+# ── Welcome app (one-click app installers + DaVinci Resolve) ──
+mainstream-welcome-installer::dots
 
 # ── Optional limine + snapper integration (setup-limine-snapper.sh) ──
 limine-mkinitcpio-hook
@@ -61,4 +65,4 @@ ckbcomp
 python312
 
 # ── Shell (heavy compile; dots installs this prebuilt, source build as fallback) ──
-mainstream-quickshell-git::local
+mainstream-quickshell-git::dots

@@ -24,6 +24,9 @@ OUTDIR="${OUTDIR:-$ROOT/out}"
 LIST="$ROOT/packages.list"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+DOTS_REPO="${DOTS_REPO:-https://github.com/MainstreamOS/dots-hyprland.git}"
+DOTS_BRANCH="${DOTS_BRANCH:-mainstream}"
+DOTS_SRC="$WORK/.dots-src"
 
 [ -f "$LIST" ] || { echo "missing $LIST" >&2; exit 1; }
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
@@ -37,6 +40,8 @@ fi
 # Refresh the sync dbs once so dependency installs resolve.
 sudo pacman -Sy --noconfirm >/dev/null
 
+sudo pacman -S --needed --noconfirm --asdeps lib32-vulkan-icd-loader lib32-libglvnd >/dev/null 2>&1 || true
+
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
 built=0; failed=0; failures=()
@@ -49,6 +54,19 @@ built=0; failed=0; failures=()
 #   ckbcomp -> console-setup-*.tar.gz from salsa.debian.org (GitLab archive)
 skip_integ_pkgs=" ckbcomp "
 
+clone_dots() {
+    [ -d "$DOTS_SRC/sdata/dist-arch" ] && return 0
+    for attempt in 1 2 3; do
+        rm -rf "$DOTS_SRC"
+        if git clone --depth=1 --filter=blob:none --sparse --branch "$DOTS_BRANCH" "$DOTS_REPO" "$DOTS_SRC" >/dev/null 2>&1 \
+           && ( cd "$DOTS_SRC" && git sparse-checkout set sdata/dist-arch >/dev/null 2>&1 ); then
+            return 0
+        fi
+        [ "$attempt" -lt 3 ] && sleep $((attempt*4))
+    done
+    return 1
+}
+
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
@@ -60,6 +78,15 @@ for entry in "${entries[@]}"; do
             echo "!! missing local PKGBUILD: pkgbuilds/$name"; failed=$((failed+1)); failures+=("$name(local)"); continue
         fi
         dir="$WORK/$name"; cp -r "$ROOT/pkgbuilds/$name" "$dir"
+    elif [ "$base" = dots ]; then
+        echo "════ $name  (dots: sdata/dist-arch/$name) ════"
+        if ! clone_dots; then
+            echo "!! dots clone failed for $name"; failed=$((failed+1)); failures+=("$name(dots-clone)"); continue
+        fi
+        if [ ! -f "$DOTS_SRC/sdata/dist-arch/$name/PKGBUILD" ]; then
+            echo "!! missing in dots: sdata/dist-arch/$name/PKGBUILD"; failed=$((failed+1)); failures+=("$name(dots)"); continue
+        fi
+        dir="$WORK/$name"; rm -rf "$dir"; cp -r "$DOTS_SRC/sdata/dist-arch/$name" "$dir"
     else
         echo "════ $name  (aur repo: $base) ════"
         dir="$WORK/$base"
