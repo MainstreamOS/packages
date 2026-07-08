@@ -40,7 +40,8 @@ fi
 # Refresh the sync dbs once so dependency installs resolve.
 sudo pacman -Sy --noconfirm >/dev/null
 
-sudo pacman -S --needed --noconfirm --asdeps lib32-vulkan-icd-loader lib32-libglvnd >/dev/null 2>&1 || true
+sudo pacman -S --needed --noconfirm --asdeps lib32-vulkan-icd-loader
+sudo pacman -S --needed --noconfirm --asdeps lib32-libglvnd lib32-mesa
 
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
