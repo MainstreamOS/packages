@@ -24,8 +24,10 @@ jobs:
     container:
       image: archlinux:base-devel
     steps:
-      - name: Install tooling
-        run: pacman -Syu --noconfirm git gnupg github-cli
+      - name: Install tooling + enable multilib
+        run: |
+          printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
+          pacman -Syu --noconfirm git gnupg github-cli
 
       - uses: actions/checkout@v6
 
