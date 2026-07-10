@@ -51,6 +51,8 @@ lib32-obs-vkcapture::obs-vkcapture
 obs-move-transition
 obs-source-record
 obs-source-clone
+obs-composite-blur
+obs-shaderfilter-git
 mainstream-obs::local
 
 # ── Welcome app (one-click app installers + DaVinci Resolve) ──

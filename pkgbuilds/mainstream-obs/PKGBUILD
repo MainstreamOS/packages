@@ -1,18 +1,21 @@
 # Maintainer: mainstreamos <https://github.com/MainstreamOS>
 pkgname=mainstream-obs
 pkgver=1.0
-pkgrel=1
+pkgrel=2
 pkgdesc='OBS Studio for content creation: Vulkan/OpenGL game capture, virtual camera, and creator plugins'
 url='https://github.com/MainstreamOS'
 arch=(any)
 license=(None)
 depends=(
   obs-studio
+  obs-studio-plugin-browser
   obs-vkcapture
   lib32-obs-vkcapture
   obs-move-transition
   obs-source-record
   obs-source-clone
+  obs-composite-blur
+  obs-shaderfilter-git
   v4l2loopback-dkms
   v4l2loopback-utils
   linux-headers
