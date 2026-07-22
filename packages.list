@@ -44,6 +44,7 @@ xpadneo-dkms
 mainstream-xpadneo::local
 game-devices-udev
 mainstream-gaming::dots
+mainstream-system::dots
 mainstream-extras::dots
 
 # ── Content creation (native OBS + plugins; rebuild when obs-studio bumps) ──
