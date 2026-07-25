@@ -34,6 +34,7 @@ darkly-bin
 # ── Widgets / tools ──
 wlogout
 topgrade
+mpvpaper
 qt6-avif-image-plugin::qt5-avif-image-plugin
 mpris-hyprland::local
 
