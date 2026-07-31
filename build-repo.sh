@@ -182,9 +182,12 @@ fi
 
 # GitHub release assets can't be symlinks, so publish real files named exactly
 # as pacman requests them: <repo>.db and <repo>.files (+ .sig).
-cp -f "$OUTDIR/$REPO.db.tar.gz"   "$OUTDIR/$REPO.db"
-cp -f "$OUTDIR/$REPO.files.tar.gz" "$OUTDIR/$REPO.files" 2>/dev/null || true
-[ -f "$OUTDIR/$REPO.db.tar.gz.sig" ] && cp -f "$OUTDIR/$REPO.db.tar.gz.sig" "$OUTDIR/$REPO.db.sig"
+# repo-add leaves these three as symlinks to the .tar.gz, so the copy has to
+# unlink the destination first — plain `cp -f` sees source and target resolving
+# to one file and refuses, leaving the symlink in place.
+cp -f --remove-destination "$OUTDIR/$REPO.db.tar.gz"    "$OUTDIR/$REPO.db"
+cp -f --remove-destination "$OUTDIR/$REPO.files.tar.gz" "$OUTDIR/$REPO.files"
+[ -f "$OUTDIR/$REPO.db.tar.gz.sig" ] && cp -f --remove-destination "$OUTDIR/$REPO.db.tar.gz.sig" "$OUTDIR/$REPO.db.sig"
 
 echo "────────────────────────────────────────"
 echo "built=$built  failed=$failed  →  $OUTDIR"
