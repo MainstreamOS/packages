@@ -55,6 +55,17 @@ built=0; failed=0; failures=()
 #   ckbcomp -> console-setup-*.tar.gz from salsa.debian.org (GitLab archive)
 skip_integ_pkgs=" ckbcomp "
 
+# codeberg.org answers git clients with HTTP 403 ("remote: Bye"), so
+# game-devices-udev's source= can't be retrieved there. Send it to the
+# maintainer's own GitHub mirror instead: it carries tag 1.0 signed by the same
+# key the PKGBUILD pins, and `git archive` of that tag hashes to the exact b2sum
+# the PKGBUILD records, so makepkg's checksum still verifies the real upstream
+# release. Exported rather than set with `git config --global` so it applies to
+# makepkg's internal clone without writing to the invoking user's ~/.gitconfig.
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="url.https://github.com/fabiscafe/game-devices-udev.insteadOf"
+export GIT_CONFIG_VALUE_0="https://codeberg.org/fabiscafe/game-devices-udev"
+
 clone_dots() {
     [ -d "$DOTS_SRC/sdata/dist-arch" ] && return 0
     for attempt in 1 2 3; do
