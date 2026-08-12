@@ -55,6 +55,15 @@ built=0; failed=0; failures=()
 #   ckbcomp -> console-setup-*.tar.gz from salsa.debian.org (GitLab archive)
 skip_integ_pkgs=" ckbcomp "
 
+# Packages whose check() cannot run in this container. The runner hands the
+# build a stdout/stderr owned by root, and dropping to the build user makes
+# `> /dev/stderr` a re-open of a pipe it no longer owns — EACCES. A check() that
+# only prints an advisory that way dies on the message rather than the test.
+#   xpadneo-dkms -> "LINUX-HEADERS required to run check", the branch it takes
+#                   here anyway, since the container has no kernel tree to
+#                   build modules against.
+nocheck_pkgs=" xpadneo-dkms "
+
 # codeberg.org answers git clients with HTTP 403 ("remote: Bye"), so
 # game-devices-udev's source= can't be retrieved there. Send it to the
 # maintainer's own GitHub mirror instead: it carries tag 1.0 signed by the same
@@ -77,6 +86,29 @@ clone_dots() {
         [ "$attempt" -lt 3 ] && sleep $((attempt*4))
     done
     return 1
+}
+
+# Repairs to a fetched PKGBUILD, applied to the work copy so the upstream one is
+# never edited. Each is announced, and says so when it finds nothing to do —
+# a patch that has stopped matching is how a package silently reverts to broken.
+patch_pkgbuild() {
+    local name="$1" dir="$2" pkgbuild="$2/PKGBUILD"
+    [ -f "$pkgbuild" ] || return 0
+    case "$name" in
+    obs-move-transition)
+        # The PKGBUILD waives the deprecation error for C++ but not for C, and
+        # move-filter.c calls obs_properties_add_button, which OBS 32 deprecated.
+        # Same waiver, same spelling, for the other language.
+        if grep -q 'CMAKE_C_FLAGS' "$pkgbuild"; then
+            echo "  patch: obs-move-transition already sets CMAKE_C_FLAGS — upstream fixed it, drop this patch."
+        elif grep -q 'CMAKE_CXX_FLAGS="-Wno-error=deprecated-declarations"' "$pkgbuild"; then
+            sed -i 's|\(-DCMAKE_CXX_FLAGS="-Wno-error=deprecated-declarations" \\\)|\1\n  -DCMAKE_C_FLAGS="-Wno-error=deprecated-declarations" \\|' "$pkgbuild"
+            echo "  patch: obs-move-transition — waived the C deprecation error alongside the C++ one."
+        else
+            echo "!! patch: obs-move-transition — the CXX waiver this patch keys on is gone; the build may fail."
+        fi
+        ;;
+    esac
 }
 
 for entry in "${entries[@]}"; do
@@ -134,7 +166,10 @@ for entry in "${entries[@]}"; do
     # source checksums are verified except for the unstable-tarball allowlist.
     verify=(--skippgpcheck)
     case "$skip_integ_pkgs" in *" $name "*) verify=(--skipinteg) ;; esac
-    if ( cd "$dir" && PKGDEST="$OUTDIR" makepkg -f --noconfirm --nodeps "${verify[@]}" "${sign[@]}" 2>&1 ); then
+    check=()
+    case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
+    patch_pkgbuild "$name" "$dir"
+    if ( cd "$dir" && PKGDEST="$OUTDIR" makepkg -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" "${sign[@]}" 2>&1 ); then
         built=$((built+1))
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
