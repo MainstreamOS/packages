@@ -50,9 +50,19 @@ jobs:
             y'"
 
       - name: Build signed repo
+        id: build
         run: |
+          # The script leaves a package that would not build out of the repo
+          # rather than abandoning the run, and names the misses on its last
+          # line. Carry that forward so publishing can go ahead and the job can
+          # still be failed at the end.
+          set -o pipefail
           runuser -u builder -- env GPGKEY="${{ secrets.GPG_KEY_ID }}" \
-            bash "$GITHUB_WORKSPACE/build-repo.sh"
+            bash "$GITHUB_WORKSPACE/build-repo.sh" 2>&1 | tee build.log
+          # awk rather than grep: with pipefail on, a grep that matches nothing
+          # fails the assignment, and matching nothing is the good case here.
+          misses=$(awk '/^failures: /{sub(/^failures: /, ""); last=$0} END{print last}' build.log)
+          echo "failed_pkgs=$misses" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
@@ -68,6 +78,11 @@ jobs:
             out/*.pkg.tar.zst.sig
 
       - name: Prune stale release assets
+        # Only when everything built. Pruning compares the release against out/,
+        # and a package that failed is missing from out/ — so pruning after a
+        # failure would delete the copy already on the release and leave users
+        # with no package at all, which is worse than the older one they have.
+        if: steps.build.outputs.failed_pkgs == ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -85,3 +100,17 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" --yes || true
             fi
           done <<< "$assets"
+
+      - name: Fail the run for any package that did not build
+        # Last, so the repo is published and pruning has had its chance before
+        # the run goes red. The packages that did build are already out; this
+        # exists so a miss is never quietly absorbed.
+        if: steps.build.outputs.failed_pkgs != ''
+        run: |
+          echo "::error title=Packages did not build::${{ steps.build.outputs.failed_pkgs }}"
+          echo "### Packages that did not build" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.build.outputs.failed_pkgs }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "The repo was published without them; the release keeps whatever copy it already had." >> "$GITHUB_STEP_SUMMARY"
+          exit 1

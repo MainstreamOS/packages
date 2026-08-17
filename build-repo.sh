@@ -205,6 +205,47 @@ for f in "$OUTDIR"/*:*.pkg.tar.zst; do
     [ -e "$f.sig" ] && mv -f "$f.sig" "$safe.sig"
 done
 
+# The db is rebuilt from out/ alone, so a package that failed would drop out of
+# the repo entirely — and pacman cannot install what the db does not list. Some
+# of these carry the system: the limine pair own the target's boot entries. So
+# the copy the published repo already has is fetched back in, which keeps the
+# repo installable at the version it had. The run still goes red, and the next
+# clean build replaces it.
+if [ "$failed" -gt 0 ]; then
+    rel="https://github.com/${GITHUB_REPOSITORY:-MainstreamOS/packages}/releases/download/mainstream-repo"
+    dbtmp="$(mktemp)"; dbx="$(mktemp -d)"
+    if curl -fsSL --retry 5 --retry-delay 4 --retry-connrefused -o "$dbtmp" "$rel/$REPO.db" 2>/dev/null \
+       && tar xzf "$dbtmp" -C "$dbx" 2>/dev/null; then
+        for entry in "${failures[@]}"; do
+            name="${entry%%(*}"
+            # Match the line after %NAME%, not the name anywhere in desc — it
+            # also appears in another package's %DEPENDS%.
+            desc=""
+            for d in "$dbx"/*/desc; do
+                [ -f "$d" ] || continue
+                [ "$(awk '/^%NAME%/{getline; print; exit}' "$d")" = "$name" ] && { desc="$d"; break; }
+            done
+            [ -n "$desc" ] || { echo "  carry-forward: $name has no published build to fall back on"; continue; }
+            fn="$(awk '/^%FILENAME%/{getline; print; exit}' "$desc")"
+            ver="$(awk '/^%VERSION%/{getline; print; exit}' "$desc")"
+            case "$fn" in ""|*/*) continue ;; esac
+            # The db carries no %PGPSIG%; clients verify each package against the
+            # .sig beside it. One without the other installs on nobody's machine,
+            # so both come back or neither does.
+            if curl -fsSL --retry 5 --retry-delay 4 -o "$OUTDIR/$fn" "$rel/$fn" 2>/dev/null \
+               && { [ -z "${GPGKEY:-}" ] || curl -fsSL --retry 5 --retry-delay 4 -o "$OUTDIR/$fn.sig" "$rel/$fn.sig" 2>/dev/null; }; then
+                echo "  carry-forward: $name $ver kept from the published repo"
+            else
+                rm -f "$OUTDIR/$fn" "$OUTDIR/$fn.sig"
+                echo "  carry-forward: $name $ver could not be downloaded intact" >&2
+            fi
+        done
+    else
+        echo "  carry-forward: the published db could not be read — failed packages will be missing from this repo" >&2
+    fi
+    rm -rf "$dbtmp" "$dbx"
+fi
+
 pkgs=("$OUTDIR"/*.pkg.tar.zst)
 [ ${#pkgs[@]} -gt 0 ] || { echo "no packages produced" >&2; exit 1; }
 
@@ -226,4 +267,10 @@ cp -f --remove-destination "$OUTDIR/$REPO.files.tar.gz" "$OUTDIR/$REPO.files"
 
 echo "────────────────────────────────────────"
 echo "built=$built  failed=$failed  →  $OUTDIR"
-[ "$failed" -eq 0 ] || { printf 'failures: %s\n' "${failures[*]}" >&2; exit 1; }
+# A package that will not build is nearly always its own upstream's problem — a
+# toolchain that moved under it, a source that vanished — and holding the other
+# forty back does nothing about that. The repo goes out with what it has. The
+# workflow reads this line: it leaves pruning alone so the release keeps the
+# copy it already had of anything missing here, then fails the run once
+# publishing is done. Producing nothing at all is still fatal, and exits above.
+[ "$failed" -eq 0 ] || printf 'failures: %s\n' "${failures[*]}" >&2
