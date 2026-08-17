@@ -43,6 +43,43 @@ sudo pacman -Sy --noconfirm >/dev/null
 sudo pacman -S --needed --noconfirm --asdeps lib32-vulkan-icd-loader
 sudo pacman -S --needed --noconfirm --asdeps lib32-libglvnd lib32-mesa
 
+# Build deps held at an older release because the current one is broken. Each
+# is installed from the Arch archive up front and then withheld from every
+# dependency install below, so nothing can quietly pull the broken one back in.
+#   gradle -> 9.7.0's own build stopped emitting gradle-public-api-legacy into
+#             dist/lib, and Arch's PKGBUILD installs whatever dist/lib holds, so
+#             the shipped distribution is missing a module it loads at configure
+#             time. Every JVM package dies before it compiles a line: both limine
+#             packages build limine-entry-tool with the system gradle.
+declare -A PINS=( [gradle]="gradle-9.6.1-1-any.pkg.tar.zst" )
+declare -A PIN_BROKEN=( [gradle]="9.7.0-1" )
+
+for pin in "${!PINS[@]}"; do
+    file="${PINS[$pin]}"
+    want="${file#"$pin"-}"; want="${want%-*.pkg.tar.zst}"
+    have="$(pacman -Q "$pin" 2>/dev/null | cut -d' ' -f2)"
+    repo_has="$(pacman -Si "$pin" 2>/dev/null | sed -nE 's/^Version[[:space:]]*: //p')"
+    if [ -n "$repo_has" ] && [ "$repo_has" != "${PIN_BROKEN[$pin]}" ]; then
+        echo "pin: $pin is now $repo_has in the repos (pinned because ${PIN_BROKEN[$pin]} was broken) — recheck whether the pin can be dropped"
+    fi
+    if [ "$have" = "$want" ]; then
+        echo "pin: $pin already at $want"
+        continue
+    fi
+    url="https://archive.archlinux.org/packages/${pin:0:1}/$pin/$file"
+    if curl -fsSL --retry 5 --retry-delay 4 --retry-connrefused -o "$WORK/$file" "$url"; then
+        curl -fsSL --retry 3 -o "$WORK/$file.sig" "$url.sig" 2>/dev/null || rm -f "$WORK/$file.sig"
+        if sudo pacman -U --noconfirm --asdeps "$WORK/$file"; then
+            echo "pin: $pin held at $want"
+        else
+            echo "pin: $pin could not be installed at $want — builds needing it will fail" >&2
+        fi
+    else
+        echo "pin: $pin $want could not be downloaded from the archive" >&2
+    fi
+    rm -f "$WORK/$file" "$WORK/$file.sig"
+done
+
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
 built=0; failed=0; failures=()
@@ -156,7 +193,13 @@ for entry in "${entries[@]}"; do
     deps="$(cd "$dir" && makepkg --printsrcinfo 2>/dev/null \
         | sed -nE 's/^[[:space:]]*(depends|makedepends) = //p' | sed -E 's/[<>=:].*//' | sort -u)"
     official=()
-    for d in $deps; do pacman -Sp "$d" </dev/null >/dev/null 2>&1 && official+=("$d"); done
+    for d in $deps; do
+        # A pinned package is already installed at the version we want, and
+        # naming it as a target here would upgrade it straight back to the
+        # broken one — --needed only skips a target that is already current.
+        [ -n "${PINS[$d]+held}" ] && continue
+        pacman -Sp "$d" </dev/null >/dev/null 2>&1 && official+=("$d")
+    done
     if [ ${#official[@]} -gt 0 ]; then
         sudo pacman -S --needed --noconfirm --asdeps "${official[@]}" || true
     fi
