@@ -46,21 +46,36 @@ sudo pacman -S --needed --noconfirm --asdeps lib32-libglvnd lib32-mesa
 # Build deps held at an older release because the current one is broken. Each
 # is installed from the Arch archive up front and then withheld from every
 # dependency install below, so nothing can quietly pull the broken one back in.
-#   gradle -> 9.7.0's own build stopped emitting gradle-public-api-legacy into
-#             dist/lib, and Arch's PKGBUILD installs whatever dist/lib holds, so
-#             the shipped distribution is missing a module it loads at configure
-#             time. Every JVM package dies before it compiles a line: both limine
-#             packages build limine-entry-tool with the system gradle.
+#   gradle -> 9.7.0 compiles Kotlin DSL scripts against a prebuilt public API
+#             jar, which it ships in a new lib/api/ directory. Arch's PKGBUILD
+#             copies lib/, lib/plugins/ and lib/agents/ by name and not
+#             recursively, so that directory never reaches the package and any
+#             .gradle.kts build dies at configure time looking for the module.
+#             Both limine packages build limine-entry-tool with the system
+#             gradle, and its scripts are Kotlin.
 declare -A PINS=( [gradle]="gradle-9.6.1-1-any.pkg.tar.zst" )
-declare -A PIN_BROKEN=( [gradle]="9.7.0-1" )
+
+# What the repos' package has to contain before a pin is pointless. A version
+# number cannot answer that and would eventually lie: a newer gradle built with
+# the same PKGBUILD drops the same directory, and a bare version bump would read
+# as a fix.
+declare -A PIN_FIXED_WHEN=( [gradle]="usr/share/java/gradle/lib/api/" )
 
 for pin in "${!PINS[@]}"; do
     file="${PINS[$pin]}"
     want="${file#"$pin"-}"; want="${want%-*.pkg.tar.zst}"
     have="$(pacman -Q "$pin" 2>/dev/null | cut -d' ' -f2)"
-    repo_has="$(pacman -Si "$pin" 2>/dev/null | sed -nE 's/^Version[[:space:]]*: //p')"
-    if [ -n "$repo_has" ] && [ "$repo_has" != "${PIN_BROKEN[$pin]}" ]; then
-        echo "pin: $pin is now $repo_has in the repos (pinned because ${PIN_BROKEN[$pin]} was broken) — recheck whether the pin can be dropped"
+    marker="${PIN_FIXED_WHEN[$pin]:-}"
+    if [ -n "$marker" ]; then
+        info="$(pacman -Si "$pin" 2>/dev/null)"
+        prepo="$(sed -nE 's/^Repository[[:space:]]*: //p' <<<"$info")"
+        parch="$(sed -nE 's/^Architecture[[:space:]]*: //p' <<<"$info")"
+        # Says nothing when it cannot tell, rather than guessing either way.
+        if [ -n "$prepo" ] && [ -n "$parch" ] \
+           && curl -fsS --max-time 30 "https://archlinux.org/packages/$prepo/$parch/$pin/files/json/" 2>/dev/null \
+              | grep -q "$marker"; then
+            echo "pin: the repos' $pin now ships $marker — this pin can be dropped"
+        fi
     fi
     if [ "$have" = "$want" ]; then
         echo "pin: $pin already at $want"
