@@ -1,7 +1,7 @@
 # Maintainer: blackdroid <blackdriod@gmail.com>
 pkgname=mpris-hyprland
-pkgver=0.2.1
-pkgrel=2
+pkgver=0.2.2
+pkgrel=1
 pkgdesc="Per-window MPRIS bridge for Firefox/Zen and Chromium — Media Session metadata, position, artwork, per-tab volume on D-Bus for Hyprland/Wayland status bars (lighter plasma-browser-integration alternative)"
 arch=('x86_64' 'aarch64')
 options=('!debug')
@@ -19,10 +19,11 @@ optdepends=(
     'quickshell: Hyprland status bar with MPRIS support'
     'waybar: status bar with MPRIS module'
 )
-makedepends=('rust' 'cargo' 'zip' 'git')
+makedepends=('rust' 'cargo' 'zip' 'unzip' 'git')
 # Build from the published repo so the ISO build is reproducible. For local
 # iteration use ./install.sh instead of makepkg.
-source=("$pkgname::git+$url.git#branch=master")
+_commit=3ec8e02b4fa1ecebdeed482dfe9fb2b2c7912130
+source=("$pkgname::git+$url.git#commit=$_commit")
 sha256sums=('SKIP')
 
 build() {
@@ -75,10 +76,21 @@ package() {
 
     local crx_id="ckiplbjpfoaeijjpijkpmhcmdfolhonm"
     if [[ -f dist/mpris-hyprland.crx ]]; then
+        local crx_ver
+        crx_ver=$(unzip -p dist/mpris-hyprland.crx manifest.json 2>/dev/null \
+            | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        if [[ -z "$crx_ver" ]]; then
+            echo "cannot read the version out of dist/mpris-hyprland.crx" >&2
+            return 1
+        fi
+        if [[ "$crx_ver" != "$pkgver" ]]; then
+            echo "crx is $crx_ver but pkgver is $pkgver — bump pkgver to match the pinned commit" >&2
+            return 1
+        fi
         install -Dm0644 dist/mpris-hyprland.crx \
             "$pkgdir/usr/share/chromium/extensions/${crx_id}.crx"
         printf '{\n  "external_crx": "/usr/share/chromium/extensions/%s.crx",\n  "external_version": "%s"\n}\n' \
-            "$crx_id" "$pkgver" \
+            "$crx_id" "$crx_ver" \
             | install -Dm0644 /dev/stdin \
                 "$pkgdir/usr/share/chromium/extensions/${crx_id}.json"
         sed 's|@HOST_BINARY@|/usr/bin/mpris-hyprland-host|g' \
