@@ -28,6 +28,18 @@ jobs:
         run: |
           printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
           pacman -Syu --noconfirm git gnupg github-cli
+          # curl's stock retry list covers timeouts and 5xx but not
+          # protocol-level faults, so a server that corrupts an HTTP/2 stream
+          # mid-download fails the package on the first try. retry-all-errors
+          # lets makepkg's source downloads shrug off transient server faults.
+          cat > /etc/makepkg.conf.d/retry-downloads.conf <<'DLEOF'
+          DLAGENTS=('file::/usr/bin/curl -qgC - -o %o %u'
+                    'ftp::/usr/bin/curl -qgfC - --ftp-pasv --retry 3 --retry-delay 3 -o %o %u'
+                    'http::/usr/bin/curl -qgb "" -fLC - --retry 3 --retry-delay 3 --retry-all-errors -o %o %u'
+                    'https::/usr/bin/curl -qgb "" -fLC - --retry 3 --retry-delay 3 --retry-all-errors -o %o %u'
+                    'rsync::/usr/bin/rsync --no-motd -z %u %o'
+                    'scp::/usr/bin/scp -C %u %o')
+          DLEOF
 
       - uses: actions/checkout@v6
 
