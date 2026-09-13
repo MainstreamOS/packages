@@ -44,6 +44,7 @@ gamescope-session-steam-git
 xpadneo-dkms
 mainstream-xpadneo::local
 game-devices-udev
+sunshine
 mainstream-gaming::dots
 mainstream-basic::dots
 mainstream-system::dots
