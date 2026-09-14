@@ -27,7 +27,7 @@ jobs:
       - name: Install tooling + enable multilib
         run: |
           printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
-          pacman -Syu --noconfirm git gnupg github-cli
+          pacman -Syu --noconfirm git gnupg github-cli rsync openssh
           # curl's stock retry list covers timeouts and 5xx but not
           # protocol-level faults, so a server that corrupts an HTTP/2 stream
           # mid-download fails the package on the first try. retry-all-errors
@@ -88,6 +88,32 @@ jobs:
             out/mainstream.files
             out/*.pkg.tar.zst
             out/*.pkg.tar.zst.sig
+
+      - name: Set up the SourceForge key
+        env:
+          SF_KEY: ${{ secrets.SF_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SF_KEY" > ~/.ssh/sf
+          chmod 600 ~/.ssh/sf
+          # Pinned rather than accepted on sight: a mirror fetched over a
+          # trusted-on-first-use connection is a mirror anyone can stand in for.
+          printf '%s\n' 'frs.sourceforge.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOQD35Ujalhh+JJkPvMckDlhu4dS7WH6NsOJ15iGCJLC' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Mirror the repo to SourceForge
+        # Unconditional for the same reason the release publish is: build-repo.sh
+        # backfills a package that failed from the copy already published, so out/
+        # is a complete repo even on a bad run.
+        run: |
+          rsync -rltvzP -e 'ssh -i ~/.ssh/sf -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts' \
+            out/ mainstreamos@frs.sourceforge.net:/home/frs/project/mainstreamos/mainstream-repo/
+
+      - name: Prune stale SourceForge files
+        if: steps.build.outputs.failed_pkgs == ''
+        run: |
+          rsync -rltvz --delete -e 'ssh -i ~/.ssh/sf -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts' \
+            out/ mainstreamos@frs.sourceforge.net:/home/frs/project/mainstreamos/mainstream-repo/
 
       - name: Prune stale release assets
         # Only when everything built. Pruning compares the release against out/,
