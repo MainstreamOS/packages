@@ -227,11 +227,26 @@ for entry in "${entries[@]}"; do
     check=()
     case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
     patch_pkgbuild "$name" "$dir"
-    if ( cd "$dir" && PKGDEST="$OUTDIR" makepkg -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" "${sign[@]}" 2>&1 ); then
+    # A PKGBUILD that decides what to compile in by looking at the build machine
+    # has to find it there. sunshine reads `pacman -Qi cuda` to pick its capture
+    # path, and the answer here is baked into the binary every NVIDIA host runs.
+    extra_dep=""; mkenv=()
+    case "$name" in
+    sunshine)
+        if sudo pacman -S --needed --noconfirm --asdeps cuda; then
+            extra_dep=cuda; mkenv=(_use_cuda=true)
+        else
+            echo "!! $name: cuda unavailable — the published binary loses the zero-copy NVENC path."
+        fi
+        ;;
+    esac
+    if ( cd "$dir" && env PKGDEST="$OUTDIR" "${mkenv[@]}" makepkg -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" "${sign[@]}" 2>&1 ); then
         built=$((built+1))
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
     fi
+    # Nearly 5 GiB that every later package in the list would build around.
+    [ -n "$extra_dep" ] && { sudo pacman -Rns --noconfirm "$extra_dep" >/dev/null 2>&1 || true; }
 done
 
 # Keep only the packages named in packages.list. Split AUR bases emit sibling
