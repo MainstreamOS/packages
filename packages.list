@@ -50,6 +50,14 @@ mainstream-basic::dots
 mainstream-system::dots
 mainstream-extras::dots
 
+# ── VR (desktop and app access inside a headset, plus wireless streaming) ──
+wayvr
+wivrn-server
+wivrn-dashboard
+xrizer
+lib32-xrizer
+xr-hardware
+
 # ── Content creation (native OBS + plugins; rebuild when obs-studio bumps) ──
 obs-vkcapture
 lib32-obs-vkcapture::obs-vkcapture
