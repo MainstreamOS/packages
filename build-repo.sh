@@ -98,6 +98,10 @@ done
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
 built=0; failed=0; failures=()
+# How each AUR base fared, so a split base named more than once in the list
+# (xrizer and its lib32 and common halves) goes through makepkg once: one run
+# already leaves every package it produces in out/.
+declare -A base_done=()
 
 # Packages whose upstream source is a forge "tag archive" (GitLab/GitHub) that
 # the host regenerates on demand with non-reproducible gzip output, so the
@@ -185,6 +189,14 @@ for entry in "${entries[@]}"; do
         dir="$WORK/$name"; rm -rf "$dir"; cp -r "$DOTS_SRC/sdata/dist-arch/$name" "$dir"
     else
         echo "════ $name  (aur repo: $base) ════"
+        if [ -n "${base_done[$base]+set}" ]; then
+            if [ "${base_done[$base]}" = ok ]; then
+                echo "  built with $base earlier in this run"; built=$((built+1))
+            else
+                echo "!! build failed: $name (with $base)"; failed=$((failed+1)); failures+=("$name(build)")
+            fi
+            continue
+        fi
         dir="$WORK/$base"
         # Retry the AUR clone: aur.archlinux.org is a single host and drops the
         # occasional connection mid-clone (SSL "unexpected eof"), which otherwise
@@ -241,9 +253,10 @@ for entry in "${entries[@]}"; do
         ;;
     esac
     if ( cd "$dir" && env PKGDEST="$OUTDIR" "${mkenv[@]}" makepkg -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" "${sign[@]}" 2>&1 ); then
-        built=$((built+1))
+        built=$((built+1)); case "$base" in local|dots) ;; *) base_done[$base]=ok ;; esac
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
+        case "$base" in local|dots) ;; *) base_done[$base]=fail ;; esac
     fi
     # Nearly 5 GiB that every later package in the list would build around.
     [ -n "$extra_dep" ] && { sudo pacman -Rns --noconfirm "$extra_dep" >/dev/null 2>&1 || true; }

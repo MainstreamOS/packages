@@ -53,7 +53,7 @@ mainstream-extras::dots
 # ── VR (desktop and app access inside a headset, plus wireless streaming) ──
 wayvr
 wivrn-server
-wivrn-dashboard
+wivrn-dashboard::wivrn-server
 xrizer
 xrizer-common::xrizer
 lib32-xrizer::xrizer
