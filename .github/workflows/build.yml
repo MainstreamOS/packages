@@ -77,17 +77,58 @@ jobs:
           echo "failed_pkgs=$misses" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: mainstream-repo
-          name: "[mainstream] pacman repo"
-          body: "Signed [mainstream] pacman repo. Consumed by the dots-hyprland installer and archiso. Built from packages.list."
-          files: |
-            out/mainstream.db
-            out/mainstream.db.sig
-            out/mainstream.files
-            out/*.pkg.tar.zst
-            out/*.pkg.tar.zst.sig
+        # One asset at a time with a pause between them. Sending the whole set
+        # at once (a delete and an upload for each of a hundred-odd files) trips
+        # GitHub's secondary rate limit, which drops uploads at random; the run
+        # that surfaced it left two packages on the release beside signatures
+        # from an older build, and pacman refused both. An asset whose digest
+        # already matches is left alone. Packages and signatures go before the
+        # database so a client never reads a db that names a file not yet
+        # there, and the release is compared against out/ at the end so a
+        # dropped upload fails the run instead of passing quietly.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=mainstream-repo
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+                 --title "[mainstream] pacman repo" \
+                 --notes "Signed [mainstream] pacman repo. Consumed by the dots-hyprland installer and archiso. Built from packages.list."
+          shopt -s nullglob
+          files=(out/*.pkg.tar.zst out/*.pkg.tar.zst.sig out/mainstream.files out/mainstream.db.sig out/mainstream.db)
+          published() {
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[] | "\(.digest) \(.name)"'
+          }
+          have=$(published)
+          missed=""
+          for f in "${files[@]}"; do
+            name=$(basename "$f"); sum="sha256:$(sha256sum "$f" | cut -d' ' -f1)"
+            if grep -qxF "$sum $name" <<< "$have"; then
+              echo "unchanged: $name"; continue
+            fi
+            ok=""
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$tag" "$f" --clobber --repo "$GITHUB_REPOSITORY"; then
+                echo "uploaded: $name"; ok=1; break
+              fi
+              # A refusal is nearly always the rate limit, which asks for a
+              # minute's wait before the next try.
+              echo "retry $attempt for $name after $((attempt * 60))s"
+              sleep $((attempt * 60))
+            done
+            [ -n "$ok" ] || missed="$missed $name"
+            sleep 2
+          done
+          have=$(published)
+          for f in "${files[@]}"; do
+            name=$(basename "$f"); sum="sha256:$(sha256sum "$f" | cut -d' ' -f1)"
+            grep -qxF "$sum $name" <<< "$have" || missed="$missed $name"
+          done
+          if [ -n "$missed" ]; then
+            echo "::error title=Release does not match the build::$missed"
+            exit 1
+          fi
 
       - name: Prune stale release assets
         # Only when everything built. Pruning compares the release against out/,
