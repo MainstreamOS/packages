@@ -55,7 +55,8 @@ wayvr
 wivrn-server
 wivrn-dashboard
 xrizer
-lib32-xrizer
+xrizer-common::xrizer
+lib32-xrizer::xrizer
 xr-hardware
 
 # ── Content creation (native OBS + plugins; rebuild when obs-studio bumps) ──
