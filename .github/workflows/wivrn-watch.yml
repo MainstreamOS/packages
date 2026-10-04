@@ -1,0 +1,193 @@
+name: Watch for a WiVRn release
+
+# Full Steam Frame support waits on a WiVRn release line newer than FLOOR (26.9),
+# which cannot pair with the Frame. This reports each newer line once, in an issue.
+
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: wivrn-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Look for a WiVRn release line newer than the one [mainstream] ships
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import io, json, os, re, subprocess, tarfile, urllib.request
+
+          repo = os.environ["REPO"]
+          # The release line [mainstream] ships and that release's assets.
+          FLOOR, KNOWN = "26.9", {"server-build-deps.tar.xz", "WiVRn-release.apk", "wivrn-server.flatpak"}
+          MARK = "<!-- wivrn-watch "
+
+          def fetch(url):
+              with urllib.request.urlopen(url, timeout=60) as r:
+                  return r.read()
+
+          def gh(*args):
+              return json.loads(subprocess.run(["gh", *args], stdout=subprocess.PIPE, text=True, check=True).stdout)
+
+          def key(version):
+              m = re.match(r"v?(\d+(?:\.\d+)*)", version.split(":", 1)[-1])
+              if not m:
+                  return None
+              parts = [int(n) for n in m.group(1).split(".")]
+              while len(parts) > 1 and parts[-1] == 0:
+                  parts.pop()
+              return tuple(parts)
+
+          def line(k):
+              return (k + (0, 0))[:2]
+
+          release = gh("api", "repos/WiVRn/WiVRn/releases/latest")
+          tag = release["tag_name"]
+          kt = key(tag)
+          if not kt:
+              print(f"::error::WiVRn's release tag {tag} is not a version.")
+              raise SystemExit(1)
+          print(f"WiVRn's latest release: {tag}.")
+          # Point releases come from WiVRn's maintenance branches, which lack the Frame client work on master.
+          if line(kt) <= line(key(FLOOR)):
+              print(f"{tag} is from the {FLOOR} line or older, which has no Frame client; nothing to do.")
+              raise SystemExit(0)
+
+          series = "%d.%d" % line(kt)
+          mark = f"{MARK}{series} -->"
+
+          def texts(issue):
+              return [issue.get("body") or ""] + [c.get("body") or "" for c in issue.get("comments") or []]
+
+          watch = [i for i in gh("issue", "list", "--repo", repo, "--state", "all", "--limit", "1000",
+                                 "--json", "number,state,body,comments")
+                   if any(MARK in t for t in texts(i))]
+          # Closed ones count too, so closing the issue settles that release line for good.
+          if any(mark in t for i in watch for t in texts(i)):
+              print(f"Already filed: the WiVRn {series} line.")
+              raise SystemExit(0)
+
+          bases = {}
+          with open("packages.list") as f:
+              for entry in f:
+                  entry = entry.split("#", 1)[0].strip()
+                  if entry:
+                      name, _, base = entry.partition("::")
+                      bases[name] = base or name
+          base = bases.get("wivrn-server")
+
+          built = published = None
+          if base:
+              source, url = {
+                  "local": ("pkgbuilds/wivrn-server/PKGBUILD", None),
+                  "dots": ("dots-hyprland's sdata/dist-arch/wivrn-server/PKGBUILD",
+                           "https://raw.githubusercontent.com/MainstreamOS/dots-hyprland/mainstream/sdata/dist-arch/wivrn-server/PKGBUILD"),
+              }.get(base, (f"the AUR's {base} PKGBUILD", f"https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={base}"))
+              try:
+                  pkgbuild = fetch(url).decode() if url else open(source).read()
+                  m = re.search(r"""^pkgver=["']?([^"'\s]+)""", pkgbuild, re.M)
+                  if m and key(m.group(1)):
+                      built = m.group(1)
+                  else:
+                      print(f"::warning::No plain pkgver in {source}.")
+              except Exception as e:
+                  print(f"::warning::{source} could not be read: {e}")
+
+              db_read = False
+              try:
+                  db = fetch(f"https://github.com/{repo}/releases/download/mainstream-repo/mainstream.db")
+                  with tarfile.open(fileobj=io.BytesIO(db)) as t:
+                      for member in t.getmembers():
+                          if member.name.startswith("wivrn-server-") and member.name.endswith("/desc"):
+                              desc = t.extractfile(member).read().decode()
+                              if re.search(r"^%NAME%\nwivrn-server$", desc, re.M):
+                                  published = re.search(r"^%VERSION%\n(\S+)", desc, re.M).group(1)
+                                  break
+                  db_read = True
+              except Exception as e:
+                  print(f"::warning::The published repo db could not be read: {e}")
+
+              repo_state = (f"publishes wivrn-server {published}" if published else
+                            "does not publish wivrn-server" if db_read else "could not be checked")
+              status = f"[mainstream] {repo_state}, and {source} is at {built or '(unreadable)'}."
+              kb, kp = key(built or ""), key(published or "")
+              if kp and kp >= kt:
+                  status += " It already publishes this release, so Quest and Pico users need the matching headset app now."
+              elif kb and kb >= kt:
+                  status += (" The PKGBUILD is already at this release, so the next build here publishes it, "
+                             "and Quest and Pico users need the matching headset app from then on.")
+          else:
+              source = "its PKGBUILD"
+              print("::warning::wivrn-server is not in packages.list.")
+              status = "wivrn-server is not in packages.list, so check where [mainstream] gets it from now."
+          print(status)
+
+          notes = [l.strip().replace("`", "'")[:200] for l in (release.get("body") or "").splitlines()
+                   if re.search("frame", l, re.I)]
+          new = [a["name"].replace("`", "'") for a in release.get("assets", []) if a["name"] not in KNOWN]
+          likely = [n for n in new if re.search(r"frame|steam|arm64|aarch64", n, re.I)]
+
+          def names(items):
+              return ", ".join(f"`{n}`" for n in items) or "none"
+
+          mention = f"yes, {len(notes)} line(s), up to 15 quoted below" if notes else "no"
+          summary = [status, "", "**Does the release mention the Frame?**",
+                     f"- Release notes: {mention}",
+                     f"- Assets that may be the Frame client: {names(likely)}",
+                     f"- Other assets that v{FLOOR} did not have: {names([n for n in new if n not in likely])}"]
+          if notes:
+              # A code block keeps the @mentions and pull request links in WiVRn's notes inert here.
+              summary += ["", "The search is for \"frame\" in any case, so frame pacing and the like match too.",
+                          "", "```text", *notes[:15], "```"]
+
+          earlier = [i for i in watch if i["state"] == "OPEN"]
+          if earlier:
+              number = str(earlier[0]["number"])
+              comment = [f"WiVRn {tag} is out too: {release['html_url']}", "",
+                         "Use this release for the checklist above.", "", *summary, "", mark]
+              subprocess.run(["gh", "issue", "comment", number, "--repo", repo, "--body", "\n".join(comment)], check=True)
+              print(f"Commented on #{number}: WiVRn {tag}")
+              raise SystemExit(0)
+
+          pkgs = [n for n, b in bases.items() if "wivrn-server" in (n, b)] or ["wivrn-server", "wivrn-dashboard"]
+          rebuild = (f"- [ ] Rebuild {names(pkgs)} at {tag}: once {source} is at {tag}, run the "
+                     "**Build [mainstream] repo** workflow by hand. If the release adds or renames packages, keep "
+                     "`WELCOME_PKGS` in archiso's `build.sh` in sync with the Welcome VR install.")
+          if "lib32-xrizer" in bases and "lib32-wivrn-server" not in bases:
+              rebuild += (" `lib32-wivrn-server` is not built here, and 32-bit OpenVR games that use `lib32-xrizer` "
+                          "may need its 32-bit runtime, so decide whether to add it to packages.list, `WELCOME_PKGS`, "
+                          "the Welcome VR install and the packages the SteamVR install removes.")
+          title = f"WiVRn {tag} released: enable full Steam Frame support"
+          body = [f"WiVRn {tag} is out: {release['html_url']}", "", *summary, "", "### To do", rebuild,
+                  "- [ ] Check how the Steam Frame client is distributed (a release asset, a store or Steam) and what "
+                  "installing it on the headset takes.",
+                  "- [ ] Switch the Welcome VR menu to official Steam Frame support (`welcome-tutorial.qml` and "
+                  "`install_vr_stack` in `mainstream-welcome-install`, dots-hyprland).",
+                  "- [ ] Make the VR docs page official (`PAGES.vr` in the site's `docs-pages.js`). The legacy NVIDIA "
+                  "edition stays labeled experimental.",
+                  "- [ ] Tell Quest and Pico users to update the WiVRn app on their headset at the same time: the "
+                  "server and the headset app have to be the same version.",
+                  "- [ ] Move the Steam Frame rows in the VR docs table from SteamVR to WiVRn. Keep the `steamvr` "
+                  "install command (or give SteamVR its own Welcome row) for wired headsets such as the Valve Index, "
+                  "and keep it as the experimental Frame route only if WiVRn's Frame client falls short.",
+                  "- [ ] Once Steam Frame support is official, remove `.github/workflows/wivrn-watch.yml`. If this "
+                  "release has no Frame client after all, close this issue, and the next release line opens a new one.",
+                  "", mark]
+          subprocess.run(["gh", "issue", "create", "--repo", repo, "--title", title, "--body", "\n".join(body)], check=True)
+          print(f"Opened: {title}")
+          EOF
