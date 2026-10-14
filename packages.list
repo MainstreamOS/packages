@@ -14,6 +14,7 @@ nautilus-copy-path
 nautilus-admin-gtk4
 mpv-modernz
 mpv-thumbfast-git
+mpv-mpris-mainstream::local
 mainstream-mpv::local
 mainstream-nautilus::local
 mainstream-calendar::local

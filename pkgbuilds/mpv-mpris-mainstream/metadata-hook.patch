@@ -1,0 +1,100 @@
+--- a/mpris.c
++++ b/mpris.c
+@@ -431,0 +432,87 @@
++/* A companion script supplies optional, asynchronously fetched episode data.
++ * Keep this independent of network services and never override embedded tags. */
++static gboolean has_embedded_title(mpv_handle *mpv)
++{
++    gboolean found = FALSE;
++    mpv_node metadata;
++    if (mpv_get_property(mpv, "metadata", MPV_FORMAT_NODE, &metadata) >= 0) {
++        if (metadata.format == MPV_FORMAT_NODE_MAP) {
++            for (int i = 0; i < metadata.u.list->num; i++) {
++                mpv_node *value = &metadata.u.list->values[i];
++                if (g_ascii_strcasecmp(metadata.u.list->keys[i], "title") == 0 &&
++                    value->format == MPV_FORMAT_STRING && value->u.string[0]) {
++                    found = TRUE;
++                }
++            }
++        }
++        mpv_free_node_contents(&metadata);
++    }
++    char *forced = mpv_get_property_string(mpv, "force-media-title");
++    found = found || (forced && forced[0]);
++    mpv_free(forced);
++    return found;
++}
++
++static char *lookup_value(mpv_handle *mpv, const char *key)
++{
++    char *property = g_strconcat("user-data/mainstream-metadata/", key, NULL);
++    mpv_node node;
++    char *value = NULL;
++    if (mpv_get_property(mpv, property, MPV_FORMAT_NODE, &node) >= 0) {
++        if (node.format == MPV_FORMAT_STRING)
++            value = g_strdup(node.u.string);
++        mpv_free_node_contents(&node);
++    }
++    g_free(property);
++    return value;
++}
++
++static void add_lookup_metadata(UserData *ud, GVariantDict *dict)
++{
++    char *path = mpv_get_property_string(ud->mpv, "path");
++    char *lookup_path = lookup_value(ud->mpv, "path");
++    gboolean current = path && path[0] && lookup_path && !strcmp(path, lookup_path);
++    mpv_free(path);
++    g_free(lookup_path);
++    if (!current)
++        return;
++
++    char *title = lookup_value(ud->mpv, "displayTitle");
++    if (title && title[0] && !has_embedded_title(ud->mpv))
++        g_variant_dict_insert(dict, "xesam:title", "s", title);
++    g_free(title);
++
++    char *series = lookup_value(ud->mpv, "series");
++    const char *album = NULL;
++    if (series && series[0]) {
++        if (!g_variant_dict_lookup(dict, "xesam:album", "&s", &album) || !album[0])
++            g_variant_dict_insert(dict, "xesam:album", "s", series);
++        if (!g_variant_dict_contains(dict, "xesam:artist")) {
++            const char *artists[] = {series, NULL};
++            g_variant_dict_insert_value(dict, "xesam:artist", g_variant_new_strv(artists, -1));
++        }
++    }
++    g_free(series);
++
++    char *art = lookup_value(ud->mpv, "artUrl");
++    if (art && g_str_has_prefix(art, "file://") && !g_variant_dict_contains(dict, "mpris:artUrl"))
++        g_variant_dict_insert(dict, "mpris:artUrl", "s", art);
++    g_free(art);
++
++    char *source = lookup_value(ud->mpv, "source");
++    char *url = lookup_value(ud->mpv, "sourceUrl");
++    if (source && url) {
++        g_variant_dict_insert(dict, "mpv:metadataSource", "s", source);
++        g_variant_dict_insert(dict, "mpv:metadataSourceUrl", "s", url);
++        char *summary = lookup_value(ud->mpv, "summary");
++        char *credit = g_strdup_printf("Episode information: %s — %s", source, url);
++        const char *comments[] = {summary && summary[0] ? summary : credit,
++                                 summary && summary[0] ? credit : NULL, NULL};
++        g_variant_dict_insert_value(dict, "xesam:comment", g_variant_new_strv(comments, -1));
++        g_free(summary);
++        g_free(credit);
++    }
++    g_free(source);
++    g_free(url);
++}
++
+@@ -490,0 +578 @@
++    add_lookup_metadata(ud, &dict);
+@@ -1125 +1213,3 @@
+-               g_strcmp0(name, "duration") == 0) {
++               g_strcmp0(name, "duration") == 0 ||
++               g_strcmp0(name, "metadata") == 0 ||
++               g_strcmp0(name, "user-data/mainstream-metadata") == 0) {
+@@ -1362,0 +1453,2 @@
++    mpv_observe_property(mpv, 0, "metadata", MPV_FORMAT_NONE);
++    mpv_observe_property(mpv, 0, "user-data/mainstream-metadata", MPV_FORMAT_NONE);
