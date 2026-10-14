@@ -1,7 +1,7 @@
 # Maintainer: mainstreamos <https://github.com/MainstreamOS>
 pkgname=mainstream-mpv
 pkgver=1.1
-pkgrel=1
+pkgrel=2
 pkgdesc='MPV with ModernZ, thumbnails, MPRIS and automatic TV episode metadata'
 url='https://github.com/MainstreamOS'
 arch=(any)
@@ -11,7 +11,7 @@ checkdepends=(lua)
 source=(metadata.py mainstream-metadata.lua README.md LICENSE test_metadata.py test_lifecycle.lua)
 sha256sums=('71c17226bb48a0c47daace203c2becc90ebd9d04741e105754b68f3b3f280c08'
             'ce246131d754bd12567f3c853557968e9994d95aab107c22817962836e505b37'
-            '0796e855264c7e2ad17a5075c6e713a5f945c39074ffbcc06d313891ce781d01'
+            '02a1fe1e6d5f32a1266cc3383d662035d63b57d5eac1a66c4ba41959d17dbfe9'
             '898980b1091e28275c6f536fa8ce77e336cf3b6e68ebbba42c8cf7dd75f25845'
             'b2d9fd69cd1a9fa2daa53af7c15e7ce25e0e419a6d9da605468b2b111d08c855'
             'ccea10fd0cf8c979b0e339846f87049b445e8945a0a3070cec582604f7b6cc56')

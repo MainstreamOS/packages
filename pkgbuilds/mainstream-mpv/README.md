@@ -8,8 +8,8 @@ No media file is rewritten.
 
 The lookup runs in a subprocess and never delays playback. New files cancel
 pending work, and both the Lua script and native plugin reject results for a
-previous file. Embedded titles, custom titles, artist/album tags and existing
-artwork retain priority. Results and images are cached under
+previous file. A confident match replaces the embedded title in MPRIS. Explicit custom titles,
+artist/album tags and existing artwork retain priority. Results and images are cached under
 `$XDG_CACHE_HOME/mainstream-mpv/metadata-v1` (normally `~/.cache`). Successful
 matches are reused for 30 days; unmatched titles for six hours. Cached details
 survive unavailable artwork. The current feature covers TV episodes, not movies.

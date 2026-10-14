@@ -75,12 +75,12 @@ with tempfile.TemporaryDirectory(prefix='mpv metadata ') as temporary:
             ipc('set_property', 'user-data/mainstream-metadata', payload)
             time.sleep(.15)
             existing = metadata()
-            for value in ['Embedded title', 'Embedded artist', 'Embedded album', art.as_uri()]:
+            for value in ['Online title', 'Embedded artist', 'Embedded album', art.as_uri()]:
                 assert value in existing, (value, existing)
-            assert 'Online title' not in existing and helper_art.as_uri() not in existing
+            assert 'Embedded title' not in existing and helper_art.as_uri() not in existing
             ipc('set_property', 'user-data/mainstream-metadata', {})
-            eventually(lambda: 'mpv:metadataSource' not in metadata(), 'enrichment did not clear')
-            print('Native MPRIS checks passed: live updates, wrong-file rejection, custom/embedded tag and artwork preservation, cleanup.')
+            eventually(lambda: 'mpv:metadataSource' not in metadata() and 'Embedded title' in metadata(), 'original metadata did not return after clearing lookup')
+            print('Native MPRIS checks passed: live updates, wrong-file rejection, embedded-title replacement, custom-title and other tag/artwork preservation, cleanup.')
         finally:
             process.terminate()
             try:

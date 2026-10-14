@@ -1,26 +1,12 @@
 --- a/mpris.c
 +++ b/mpris.c
-@@ -431,0 +432,87 @@
+@@ -431,0 +432,73 @@
 +/* A companion script supplies optional, asynchronously fetched episode data.
-+ * Keep this independent of network services and never override embedded tags. */
-+static gboolean has_embedded_title(mpv_handle *mpv)
++ * Keep this independent of network services and preserve custom titles, existing artist/album tags and artwork. */
++static gboolean has_custom_title(mpv_handle *mpv)
 +{
-+    gboolean found = FALSE;
-+    mpv_node metadata;
-+    if (mpv_get_property(mpv, "metadata", MPV_FORMAT_NODE, &metadata) >= 0) {
-+        if (metadata.format == MPV_FORMAT_NODE_MAP) {
-+            for (int i = 0; i < metadata.u.list->num; i++) {
-+                mpv_node *value = &metadata.u.list->values[i];
-+                if (g_ascii_strcasecmp(metadata.u.list->keys[i], "title") == 0 &&
-+                    value->format == MPV_FORMAT_STRING && value->u.string[0]) {
-+                    found = TRUE;
-+                }
-+            }
-+        }
-+        mpv_free_node_contents(&metadata);
-+    }
 +    char *forced = mpv_get_property_string(mpv, "force-media-title");
-+    found = found || (forced && forced[0]);
++    gboolean found = forced && forced[0];
 +    mpv_free(forced);
 +    return found;
 +}
@@ -50,7 +36,7 @@
 +        return;
 +
 +    char *title = lookup_value(ud->mpv, "displayTitle");
-+    if (title && title[0] && !has_embedded_title(ud->mpv))
++    if (title && title[0] && !has_custom_title(ud->mpv))
 +        g_variant_dict_insert(dict, "xesam:title", "s", title);
 +    g_free(title);
 +
@@ -88,13 +74,13 @@
 +    g_free(url);
 +}
 +
-@@ -490,0 +578 @@
+@@ -490,0 +564 @@
 +    add_lookup_metadata(ud, &dict);
-@@ -1125 +1213,3 @@
+@@ -1125 +1199,3 @@
 -               g_strcmp0(name, "duration") == 0) {
 +               g_strcmp0(name, "duration") == 0 ||
 +               g_strcmp0(name, "metadata") == 0 ||
 +               g_strcmp0(name, "user-data/mainstream-metadata") == 0) {
-@@ -1362,0 +1453,2 @@
+@@ -1362,0 +1439,2 @@
 +    mpv_observe_property(mpv, 0, "metadata", MPV_FORMAT_NONE);
 +    mpv_observe_property(mpv, 0, "user-data/mainstream-metadata", MPV_FORMAT_NONE);
