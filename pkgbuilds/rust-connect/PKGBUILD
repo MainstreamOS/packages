@@ -1,0 +1,41 @@
+pkgname=rust-connect
+pkgver=0.2.0.r52.g1a5d5cc
+pkgrel=1
+_commit=1a5d5cc64440732dc501e7f76fcdfad8f9fd707a
+pkgdesc="KDE Connect compatible daemon in Rust, a drop-in phone backend for desktop shells"
+arch=('x86_64' 'aarch64')
+url="https://github.com/MainstreamOS/rust-connect"
+license=('GPL-2.0-or-later')
+depends=('glibc' 'libgcc' 'libxkbcommon' 'sshfs')
+makedepends=('cargo' 'git')
+conflicts=('kdeconnect')
+options=('!debug' '!lto')
+source=("$pkgname::git+$url.git#commit=$_commit")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+package() {
+    cd "$pkgname"
+    install -Dm0755 target/release/rust-connect "$pkgdir/usr/bin/rust-connect"
+    install -Dm0755 packaging/compat/kdeconnectd "$pkgdir/usr/bin/kdeconnectd"
+    install -Dm0755 packaging/compat/kdeconnect-app "$pkgdir/usr/bin/kdeconnect-app"
+    sed 's|^ExecStart=.*|ExecStart=/usr/bin/rust-connect|' packaging/rust-connect.service \
+        | install -Dm0644 /dev/stdin "$pkgdir/usr/lib/systemd/user/rust-connect.service"
+    grep -qx 'ExecStart=/usr/bin/rust-connect' "$pkgdir/usr/lib/systemd/user/rust-connect.service"
+    sed 's|@BINARY@|/usr/bin/rust-connect|' packaging/compat/org.kde.kdeconnect.service.in \
+        | install -Dm0644 /dev/stdin "$pkgdir/usr/share/dbus-1/services/org.kde.kdeconnect.service"
+    install -Dm0644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
