@@ -1,7 +1,7 @@
 pkgname=rust-connect
-pkgver=0.2.0.r52.g1a5d5cc
+pkgver=0.2.0.r52.g4530682
 pkgrel=1
-_commit=1a5d5cc64440732dc501e7f76fcdfad8f9fd707a
+_commit=4530682ab5e68dda945aacae2554fc78d7c8f503
 pkgdesc="KDE Connect compatible daemon in Rust, a drop-in phone backend for desktop shells"
 arch=('x86_64' 'aarch64')
 url="https://github.com/MainstreamOS/rust-connect"
