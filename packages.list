@@ -39,6 +39,7 @@ mpvpaper
 qt6-avif-image-plugin::qt5-avif-image-plugin
 mpris-hyprland::local
 rust-connect::local
+mainstream-widgets::dots
 xdg-desktop-portal-hyprland::local
 mainstream-portal::dots
 

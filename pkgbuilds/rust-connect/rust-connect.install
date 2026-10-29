@@ -1,0 +1,10 @@
+post_install() {
+    python3 -I /usr/lib/rust-connect/migrate-backend.py --all-users ||
+        echo 'rust-connect: a session needs manual attention; see the warnings above.'
+    echo 'rust-connect: existing Rust Connect pairings are preserved. When switching from KDE Connect, pair your phone with Rust Connect; KDE Connect data is kept.'
+}
+
+post_upgrade() {
+    python3 -I /usr/lib/rust-connect/migrate-backend.py --all-users --upgrade ||
+        echo 'rust-connect: a session needs manual attention; see the warnings above.'
+}

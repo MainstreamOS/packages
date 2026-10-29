@@ -1,17 +1,19 @@
 pkgname=rust-connect
-pkgver=0.2.0.r52.g4530682
-pkgrel=1
-_commit=4530682ab5e68dda945aacae2554fc78d7c8f503
+pkgver=0.2.0.r53.gd8d9068
+pkgrel=2
+_commit=d8d90683fe90d665c8fdf2b02b83ea10d7cbf391
 pkgdesc="KDE Connect compatible daemon in Rust, a drop-in phone backend for desktop shells"
 arch=('x86_64' 'aarch64')
 url="https://github.com/MainstreamOS/rust-connect"
 license=('GPL-2.0-or-later')
-depends=('glibc' 'libgcc' 'libxkbcommon' 'sshfs')
+depends=('glibc' 'libgcc' 'libxkbcommon' 'sshfs' 'python' 'systemd' 'util-linux')
 makedepends=('cargo' 'git')
 conflicts=('kdeconnect')
+replaces=('kdeconnect')
+install=rust-connect.install
 options=('!debug' '!lto')
-source=("$pkgname::git+$url.git#commit=$_commit")
-sha256sums=('SKIP')
+source=("$pkgname::git+$url.git#commit=$_commit" 'migrate-backend.py')
+sha256sums=('SKIP' '2db9583ed190b8c1a0f4eff13cd2cae661cc75d5b6a7b2a1767fe95c4fefe917')
 
 prepare() {
     cd "$pkgname"
@@ -38,4 +40,6 @@ package() {
         | install -Dm0644 /dev/stdin "$pkgdir/usr/share/dbus-1/services/org.kde.kdeconnect.service"
     install -Dm0644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
     install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm0644 packaging/rust-connect.service "$pkgdir/usr/share/rust-connect/legacy-user.service"
+    install -Dm0755 "$srcdir/migrate-backend.py" "$pkgdir/usr/lib/rust-connect/migrate-backend.py"
 }
