@@ -1,0 +1,27 @@
+name: Watch for a tested GTK release
+
+# The GTK fork tests new stable Arch recipes daily. Once that succeeds, build
+# through this repository's signed publisher instead of shipping an unsigned
+# fork release or waiting for Monday. Active builds are not duplicated.
+on:
+  schedule:
+    - cron: "47 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: watch-mainstream-gtk
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Request a signed rebuild when a tested GTK update is ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch-gtk.py

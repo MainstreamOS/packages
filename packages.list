@@ -3,6 +3,7 @@
 # Format: one entry per line.
 #   <pkgname>              AUR git repo name == package name
 #   <pkgname>::<pkgbase>   AUR git repo (pkgbase) differs from the package name
+#   <pkgname>::mainstream-git  MainstreamOS/<pkgname>, mainstream branch
 # Blank lines and #-comments are ignored.
 #
 # Every entry here is FOSS and verified against the AUR. Proprietary or
@@ -23,6 +24,8 @@ mainstream-calendar::local
 zen-browser-bin
 
 # ── Fonts / themes ──
+gtk4-live-css::mainstream-git
+mainstream-fonts-themes::dots
 adw-gtk-theme-git
 otf-space-grotesk::local
 ttf-material-symbols-variable-git::material-symbols-git

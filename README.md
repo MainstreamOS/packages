@@ -104,3 +104,15 @@ Append it to `packages.list` (use `name::pkgbase` if the AUR git repo name
 differs from the package name) and push — CI rebuilds and republishes. **Verify
 the license is FOSS first**: proprietary fonts/apps (e.g. `ttf-google-sans`,
 DaVinci Resolve, Plex) must not be hosted/redistributed.
+
+Use `name::mainstream-git` for a standalone recipe maintained in
+`MainstreamOS/name` on its `mainstream` branch. The builder clones the recipe,
+including its patches and hook files, and applies the same signing, rebuild
+versioning and retention rules. `gtk4-live-css` uses this path; its fork tracks
+Arch's stable GTK packaging and tests live CSS reloads before updating the
+recipe. A six-hour GTK watcher requests a signed repository build once a newer
+stable GTK recipe has passed the fork's tests, avoiding duplicate active builds.
+The package replaces stock `gtk4` during a normal full system upgrade.
+The live-CSS concept and original patch are by
+[saneaspect](https://github.com/saneaspect), from
+[gtk4-live-css](https://github.com/saneaspect/gtk4-live-css).

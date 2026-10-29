@@ -17,6 +17,8 @@
 #   OUTDIR   output directory (default: ./out)
 #   PUBLISHED_ASSETS  snapshot from scripts/repo_safety.py. Required in CI;
 #            reserves a new pkgrel for rebuilds of already published versions.
+#   MAINSTREAM_PKG_REPO_BASE / MAINSTREAM_PKG_BRANCH  fork recipe source
+#            (defaults: https://github.com/MainstreamOS / mainstream).
 
 set -uo pipefail
 
@@ -29,6 +31,8 @@ trap 'rm -rf "$WORK"' EXIT
 DOTS_REPO="${DOTS_REPO:-https://github.com/MainstreamOS/dots-hyprland.git}"
 DOTS_BRANCH="${DOTS_BRANCH:-mainstream}"
 DOTS_SRC="$WORK/.dots-src"
+MAINSTREAM_PKG_REPO_BASE="${MAINSTREAM_PKG_REPO_BASE:-https://github.com/MainstreamOS}"
+MAINSTREAM_PKG_BRANCH="${MAINSTREAM_PKG_BRANCH:-mainstream}"
 
 [ -f "$LIST" ] || { echo "missing $LIST" >&2; exit 1; }
 if [ "${CI:-}" = true ] && [ -z "${PUBLISHED_ASSETS:-}" ]; then
@@ -209,6 +213,24 @@ for entry in "${entries[@]}"; do
             echo "!! missing local PKGBUILD: pkgbuilds/$name"; failed=$((failed+1)); failures+=("$name(local)"); continue
         fi
         dir="$WORK/$name"; cp -r "$ROOT/pkgbuilds/$name" "$dir"
+    elif [ "$base" = mainstream-git ]; then
+        # Standalone recipes maintained in Mainstream forks, including their
+        # checked-in patches and hook files. They use the same signing and
+        # immutable publication path as every other package in this repo.
+        echo "════ $name  (Mainstream fork: $MAINSTREAM_PKG_BRANCH) ════"
+        dir="$WORK/$name"
+        cloned=false
+        for attempt in 1 2 3; do
+            rm -rf "$dir"
+            if git clone --depth=1 --branch "$MAINSTREAM_PKG_BRANCH" \
+                "$MAINSTREAM_PKG_REPO_BASE/$name.git" "$dir"; then
+                cloned=true; break
+            fi
+            [ "$attempt" -lt 3 ] && sleep $((attempt*4))
+        done
+        if ! $cloned || [ ! -f "$dir/PKGBUILD" ]; then
+            echo "!! Mainstream recipe unavailable: $name"; failed=$((failed+1)); failures+=("$name(mainstream-clone)"); continue
+        fi
     elif [ "$base" = dots ]; then
         echo "════ $name  (dots: sdata/dist-arch/$name) ════"
         if ! clone_dots; then
@@ -284,10 +306,10 @@ for entry in "${entries[@]}"; do
         ;;
     esac
     if build_package "$dir" 2>&1; then
-        built=$((built+1)); case "$base" in local|dots) ;; *) base_done[$base]=ok ;; esac
+        built=$((built+1)); case "$base" in local|dots|mainstream-git) ;; *) base_done[$base]=ok ;; esac
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
-        case "$base" in local|dots) ;; *) base_done[$base]=fail ;; esac
+        case "$base" in local|dots|mainstream-git) ;; *) base_done[$base]=fail ;; esac
     fi
     # Nearly 5 GiB that every later package in the list would build around.
     [ -n "$extra_dep" ] && { sudo pacman -Rns --noconfirm "$extra_dep" >/dev/null 2>&1 || true; }
