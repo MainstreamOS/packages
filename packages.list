@@ -39,6 +39,8 @@ mpvpaper
 qt6-avif-image-plugin::qt5-avif-image-plugin
 mpris-hyprland::local
 rust-connect::local
+xdg-desktop-portal-hyprland::local
+mainstream-portal::dots
 
 # ── Gaming (gamescope session stack + controller support) ──
 gamescope-session-git

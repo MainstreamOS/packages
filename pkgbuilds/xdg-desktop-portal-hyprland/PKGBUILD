@@ -1,0 +1,52 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=xdg-desktop-portal-hyprland
+pkgver=1.5.0
+pkgrel=2
+pkgdesc='Hyprland desktop portal with monitor, window, and workspace sharing'
+arch=('x86_64' 'aarch64')
+url='https://github.com/hyprwm/xdg-desktop-portal-hyprland'
+license=('BSD-3-Clause')
+# The Hyprtoolkit picker crashes during backend destruction with LTO enabled.
+options=('!lto')
+depends=(
+  glibc gcc-libs hyprlang hyprutils 'hyprtoolkit>=0.6.0'
+  libdrm libpipewire mesa sdbus-cpp util-linux-libs wayland
+  xdg-desktop-portal
+  libhyprlang.so libhyprutils.so libhyprtoolkit.so
+  libsdbus-c++.so libuuid.so
+)
+makedepends=(cmake git ninja wayland-protocols hyprwayland-scanner)
+optdepends=('grim: screenshot capture' 'slurp: interactive screenshot regions')
+provides=('xdg-desktop-portal-impl')
+_commit=d1467fea8d1895cb7835829c2fbb271a0d37760a
+_protocols=d260a60f90668bf55dbddb6fa60fba9a3e2e34e9
+source=(
+  "$pkgname::git+$url.git#commit=$_commit"
+  "hyprland-protocols::git+https://github.com/hyprwm/hyprland-protocols.git#commit=$_protocols"
+)
+sha256sums=('SKIP' 'SKIP')
+
+prepare() {
+  cd "$pkgname"
+  git submodule init subprojects/hyprland-protocols
+  git config submodule.hyprland-protocols.url "$srcdir/hyprland-protocols"
+  git -c protocol.file.allow=always submodule update subprojects/hyprland-protocols
+}
+
+build() {
+  cmake -S "$pkgname" -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBEXECDIR=/usr/lib \
+    -DBUILD_TESTING=ON
+  cmake --build build
+}
+
+check() {
+  ctest --test-dir build --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 "$pkgname/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
