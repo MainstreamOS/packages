@@ -15,6 +15,8 @@
 #            built (local testing only — never publish unsigned).
 #   REPO     repo name (default: mainstream)
 #   OUTDIR   output directory (default: ./out)
+#   PUBLISHED_ASSETS  snapshot from scripts/repo_safety.py. Required in CI;
+#            reserves a new pkgrel for rebuilds of already published versions.
 
 set -uo pipefail
 
@@ -29,6 +31,12 @@ DOTS_BRANCH="${DOTS_BRANCH:-mainstream}"
 DOTS_SRC="$WORK/.dots-src"
 
 [ -f "$LIST" ] || { echo "missing $LIST" >&2; exit 1; }
+if [ "${CI:-}" = true ] && [ -z "${PUBLISHED_ASSETS:-}" ]; then
+    echo "CI requires a published asset snapshot before building" >&2; exit 1
+fi
+if [ -n "${PUBLISHED_ASSETS:-}" ] && [ ! -r "$PUBLISHED_ASSETS" ]; then
+    echo "cannot read published asset snapshot: $PUBLISHED_ASSETS" >&2; exit 1
+fi
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
 
 # Enable [multilib] so lib32-* build deps (e.g. obs-vkcapture's 32-bit split)
@@ -167,6 +175,29 @@ patch_pkgbuild() {
     esac
 }
 
+build_package() {
+    local dir="$1"
+    (
+        cd "$dir" || exit 1
+        export PKGDEST="$OUTDIR"
+        if [ -n "${PUBLISHED_ASSETS:-}" ]; then
+            # Resolve VCS pkgver() first: it resets pkgrel when sources advance.
+            # The real build reuses these prepared sources, so prepare() is not
+            # run twice and cannot reset the rebuild's new pkgrel afterward.
+            env "${mkenv[@]}" makepkg --nobuild -f --noconfirm --nodeps \
+                "${verify[@]}" "${check[@]}" || exit 1
+            env "${mkenv[@]}" makepkg --printsrcinfo > .SRCINFO || exit 1
+            python "$ROOT/scripts/repo_safety.py" bump-pkgrel \
+                PKGBUILD .SRCINFO "$PUBLISHED_ASSETS" || exit 1
+            env "${mkenv[@]}" makepkg --noextract -f --noconfirm --nodeps \
+                "${verify[@]}" "${check[@]}" "${sign[@]}"
+        else
+            env "${mkenv[@]}" makepkg -f --noconfirm --nodeps \
+                "${verify[@]}" "${check[@]}" "${sign[@]}"
+        fi
+    )
+}
+
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
@@ -252,7 +283,7 @@ for entry in "${entries[@]}"; do
         fi
         ;;
     esac
-    if ( cd "$dir" && env PKGDEST="$OUTDIR" "${mkenv[@]}" makepkg -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" "${sign[@]}" 2>&1 ); then
+    if build_package "$dir" 2>&1; then
         built=$((built+1)); case "$base" in local|dots) ;; *) base_done[$base]=ok ;; esac
     else
         echo "!! build failed: $name"; failed=$((failed+1)); failures+=("$name(build)")
@@ -277,9 +308,8 @@ for f in "$OUTDIR"/*.pkg.tar.zst; do
 done
 
 # GitHub Release assets can't carry the ':' epoch separator: the upload mangles
-# it (1:1.2.0 -> 1.1.2.0) and the prune step in build.yml then deletes the
-# mismatched asset, so any epoch package (e.g. nautilus-admin-gtk4-1:1.2.0-2)
-# 404s at install time. Rename epoch packages to a colon-free filename BEFORE
+# it (1:1.2.0 -> 1.1.2.0), so epoch packages can 404 at install time. Rename
+# epoch packages to a colon-free filename BEFORE
 # repo-add so the db's %FILENAME% matches the colon-free asset we publish. The
 # epoch stays in the package's internal %VERSION% (pacman orders from there), so
 # only the download filename changes; consumers normalise ':'->'_' to match.
@@ -350,13 +380,14 @@ fi
 cp -f --remove-destination "$OUTDIR/$REPO.db.tar.gz"    "$OUTDIR/$REPO.db"
 cp -f --remove-destination "$OUTDIR/$REPO.files.tar.gz" "$OUTDIR/$REPO.files"
 [ -f "$OUTDIR/$REPO.db.tar.gz.sig" ] && cp -f --remove-destination "$OUTDIR/$REPO.db.tar.gz.sig" "$OUTDIR/$REPO.db.sig"
+[ -f "$OUTDIR/$REPO.files.tar.gz.sig" ] && cp -f --remove-destination "$OUTDIR/$REPO.files.tar.gz.sig" "$OUTDIR/$REPO.files.sig"
 
 echo "────────────────────────────────────────"
 echo "built=$built  failed=$failed  →  $OUTDIR"
 # A package that will not build is nearly always its own upstream's problem — a
 # toolchain that moved under it, a source that vanished — and holding the other
 # forty back does nothing about that. The repo goes out with what it has. The
-# workflow reads this line: it leaves pruning alone so the release keeps the
-# copy it already had of anything missing here, then fails the run once
-# publishing is done. Producing nothing at all is still fatal, and exits above.
+# workflow reads this line and fails the run once publishing is done. Older
+# files are retained independently of build success. Producing nothing at all
+# is still fatal, and exits above.
 [ "$failed" -eq 0 ] || printf 'failures: %s\n' "${failures[*]}" >&2

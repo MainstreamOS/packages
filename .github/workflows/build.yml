@@ -9,6 +9,7 @@ on:
     paths:
       - packages.list
       - build-repo.sh
+      - scripts/**
       - .github/workflows/build.yml
 
 permissions:
@@ -16,7 +17,7 @@ permissions:
 
 concurrency:
   group: build-mainstream-repo
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -27,7 +28,7 @@ jobs:
       - name: Install tooling + enable multilib
         run: |
           printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
-          pacman -Syu --noconfirm git gnupg github-cli rsync openssh
+          pacman -Syu --noconfirm git gnupg github-cli rsync openssh python
           # curl's stock retry list covers timeouts and 5xx but not
           # protocol-level faults, so a server that corrupts an HTTP/2 stream
           # mid-download fails the package on the first try. retry-all-errors
@@ -61,6 +62,13 @@ jobs:
             "gpg --batch --command-fd 0 --edit-key '${{ secrets.GPG_KEY_ID }}' trust quit <<<'5
             y'"
 
+      - name: Snapshot published package filenames
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runuser -u builder -- env GH_TOKEN="$GH_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            python scripts/repo_safety.py snapshot "$GITHUB_WORKSPACE/published-assets.json"
+
       - name: Build signed repo
         id: build
         run: |
@@ -70,89 +78,22 @@ jobs:
           # still be failed at the end.
           set -o pipefail
           runuser -u builder -- env GPGKEY="${{ secrets.GPG_KEY_ID }}" \
+            CI=true PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" \
             bash "$GITHUB_WORKSPACE/build-repo.sh" 2>&1 | tee build.log
           # awk rather than grep: with pipefail on, a grep that matches nothing
           # fails the assignment, and matching nothing is the good case here.
           misses=$(awk '/^failures: /{sub(/^failures: /, ""); last=$0} END{print last}' build.log)
           echo "failed_pkgs=$misses" >> "$GITHUB_OUTPUT"
 
-      - name: Publish release
-        # One asset at a time with a pause between them. Sending the whole set
-        # at once (a delete and an upload for each of a hundred-odd files) trips
-        # GitHub's secondary rate limit, which drops uploads at random; the run
-        # that surfaced it left two packages on the release beside signatures
-        # from an older build, and pacman refused both. An asset whose digest
-        # already matches is left alone. Packages and signatures go before the
-        # database so a client never reads a db that names a file not yet
-        # there, and the release is compared against out/ at the end so a
-        # dropped upload fails the run instead of passing quietly.
+      - name: Publish release safely
+        # Packages/signatures are immutable. The publisher checks every
+        # collision and upload before replacing the database, and retains
+        # superseded builds for 30 days after they leave that database.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag=mainstream-repo
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-                 --title "[mainstream] pacman repo" \
-                 --notes "Signed [mainstream] pacman repo. Consumed by the dots-hyprland installer and archiso. Built from packages.list."
-          shopt -s nullglob
-          files=(out/*.pkg.tar.zst out/*.pkg.tar.zst.sig out/mainstream.files out/mainstream.db.sig out/mainstream.db)
-          published() {
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
-              --jq '.assets[] | "\(.digest) \(.name)"'
-          }
-          have=$(published)
-          missed=""
-          for f in "${files[@]}"; do
-            name=$(basename "$f"); sum="sha256:$(sha256sum "$f" | cut -d' ' -f1)"
-            if grep -qxF "$sum $name" <<< "$have"; then
-              echo "unchanged: $name"; continue
-            fi
-            ok=""
-            for attempt in 1 2 3 4 5; do
-              if gh release upload "$tag" "$f" --clobber --repo "$GITHUB_REPOSITORY"; then
-                echo "uploaded: $name"; ok=1; break
-              fi
-              # A refusal is nearly always the rate limit, which asks for a
-              # minute's wait before the next try.
-              echo "retry $attempt for $name after $((attempt * 60))s"
-              sleep $((attempt * 60))
-            done
-            [ -n "$ok" ] || missed="$missed $name"
-            sleep 2
-          done
-          have=$(published)
-          for f in "${files[@]}"; do
-            name=$(basename "$f"); sum="sha256:$(sha256sum "$f" | cut -d' ' -f1)"
-            grep -qxF "$sum $name" <<< "$have" || missed="$missed $name"
-          done
-          if [ -n "$missed" ]; then
-            echo "::error title=Release does not match the build::$missed"
-            exit 1
-          fi
-
-      - name: Prune stale release assets
-        # Only when everything built. Pruning compares the release against out/,
-        # and a package that failed is missing from out/ — so pruning after a
-        # failure would delete the copy already on the release and leave users
-        # with no package at all, which is worse than the older one they have.
-        if: steps.build.outputs.failed_pkgs == ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Publish only adds/overwrites; delete anything on the release this
-          # build did not produce so it stays a faithful mirror of out/. Runs
-          # after publish so the release is never left inconsistent.
-          assets=$(gh release view mainstream-repo --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[].name' 2>/dev/null || true)
-          current=$(ls -1 out/ 2>/dev/null)
-          while read -r asset; do
-            [ -n "$asset" ] || continue
-            if ! grep -qxF "$asset" <<< "$current"; then
-              echo "pruning stale asset: $asset"
-              gh release delete-asset mainstream-repo "$asset" \
-                --repo "$GITHUB_REPOSITORY" --yes || true
-            fi
-          done <<< "$assets"
+          runuser -u builder -- env GH_TOKEN="$GH_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            python scripts/repo_safety.py publish "$GITHUB_WORKSPACE/out"
 
       - name: Set up the SourceForge key
         # Absolute paths throughout: in a container job HOME is /github/home
@@ -170,24 +111,13 @@ jobs:
           chmod 600 /tmp/sf/known_hosts
 
       - name: Mirror the repo to SourceForge
-        # The mirror is a fallback, so it never fails the build or holds up the
-        # release maintenance above it. Unconditional for the same reason the
-        # release publish is: build-repo.sh backfills a package that failed from
-        # the copy already published, so out/ is a complete repo even on a bad run.
+        # Keep old payloads for clients using cached mirror databases. A
+        # conflicting filename or failed transfer leaves mirror metadata alone.
         continue-on-error: true
-        run: |
-          rsync -rltvzP -e 'ssh -i /tmp/sf/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/sf/known_hosts' \
-            out/ mainstreamos@frs.sourceforge.net:/home/frs/project/mainstreamos/mainstream-repo/
-
-      - name: Prune stale SourceForge files
-        continue-on-error: true
-        if: steps.build.outputs.failed_pkgs == ''
-        run: |
-          rsync -rltvz --delete -e 'ssh -i /tmp/sf/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/tmp/sf/known_hosts' \
-            out/ mainstreamos@frs.sourceforge.net:/home/frs/project/mainstreamos/mainstream-repo/
+        run: bash scripts/mirror-repo.sh out
 
       - name: Fail the run for any package that did not build
-        # Last, so the repo is published and pruning has had its chance before
+        # Last, so the verified repo is published before
         # the run goes red. The packages that did build are already out; this
         # exists so a miss is never quietly absorbed.
         if: steps.build.outputs.failed_pkgs != ''
