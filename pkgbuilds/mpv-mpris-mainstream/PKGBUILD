@@ -1,7 +1,7 @@
 # Maintainer: mainstreamos <https://github.com/MainstreamOS>
 pkgname=mpv-mpris-mainstream
 pkgver=1.3
-pkgrel=2
+pkgrel=3
 pkgdesc='MPRIS plugin for mpv with an optional asynchronous episode metadata hook'
 arch=(x86_64 aarch64)
 url='https://github.com/hoyon/mpv-mpris'
@@ -11,6 +11,7 @@ makedepends=(pkgconf)
 checkdepends=(python dbus playerctl)
 provides=("mpv-mpris=$pkgver")
 conflicts=(mpv-mpris)
+replaces=(mpv-mpris)
 options=('!debug')
 source=("mpv-mpris-$pkgver.tar.gz::https://codeload.github.com/hoyon/mpv-mpris/tar.gz/refs/tags/$pkgver" metadata-hook.patch test_metadata_hook.py)
 sha256sums=('47deb26641b2f45edbbaf48a9136177b565b64f544f0fa7b956739fc7a4fc0a8'
