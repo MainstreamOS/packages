@@ -28,7 +28,7 @@ jobs:
       - name: Install tooling + enable multilib
         run: |
           printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
-          pacman -Syu --noconfirm git gnupg github-cli rsync openssh python
+          pacman -Syu --noconfirm git gnupg github-cli rsync openssh python simde
           # curl's stock retry list covers timeouts and 5xx but not
           # protocol-level faults, so a server that corrupts an HTTP/2 stream
           # mid-download fails the package on the first try. retry-all-errors

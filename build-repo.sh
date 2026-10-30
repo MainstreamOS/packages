@@ -271,7 +271,14 @@ for entry in "${entries[@]}"; do
     # aware (pacman -Sp), so virtuals like cargo (provided by rust, needed by
     # topgrade) install too; AUR-only deps are skipped — we don't pull the AUR.
     deps="$(cd "$dir" && makepkg --printsrcinfo 2>/dev/null \
-        | sed -nE 's/^[[:space:]]*(depends|makedepends) = //p' | sed -E 's/[<>=:].*//' | sort -u)"
+        | sed -nE 's/^[[:space:]]*(depends|makedepends|checkdepends) = //p' | sed -E 's/[<>=:].*//' | sort -u)"
+    # obs-studio 33.0.0 cmake files require SIMDe headers, but Arch's obs-studio
+    # package omits simde from runtime depends and AUR plugins do not declare it.
+    case " $deps " in
+    *" obs-studio "*)
+        deps="$deps simde"
+        ;;
+    esac
     official=()
     for d in $deps; do
         # A pinned package is already installed at the version we want, and
