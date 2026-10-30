@@ -1,7 +1,12 @@
 name: Build [mainstream] repo
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Space-separated package names to force rebuild (or "all")'
+        required: false
+        default: ''
   schedule:
     - cron: "0 6 * * 1"   # weekly (Mon 06:00 UTC) — pick up -git package updates
   push:
@@ -79,6 +84,7 @@ jobs:
           set -o pipefail
           runuser -u builder -- env GPGKEY="${{ secrets.GPG_KEY_ID }}" \
             CI=true PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" \
+            FORCE_REBUILD="${{ inputs.force_rebuild || '' }}" \
             bash "$GITHUB_WORKSPACE/build-repo.sh" 2>&1 | tee build.log
           # awk rather than grep: with pipefail on, a grep that matches nothing
           # fails the assignment, and matching nothing is the good case here.

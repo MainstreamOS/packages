@@ -110,6 +110,7 @@ done
 mapfile -t entries < <(sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | grep -v '^$')
 
 built=0; failed=0; failures=()
+sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
 # How each AUR base fared, so a split base named more than once in the list
 # (xrizer and its lib32 and common halves) goes through makepkg once: one run
 # already leaves every package it produces in out/.
@@ -267,6 +268,34 @@ for entry in "${entries[@]}"; do
         fi
     fi
 
+    # AUR maintainer PGP keys aren't imported, so source PGP is skipped for all;
+    # source checksums are verified except for the unstable-tarball allowlist.
+    verify=(--skippgpcheck)
+    case "$skip_integ_pkgs" in *" $name "*) verify=(--skipinteg) ;; esac
+    check=()
+    case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
+    patch_pkgbuild "$name" "$dir"
+    extra_dep=""; mkenv=()
+
+    # Generate .SRCINFO to inspect package metadata. For VCS packages (with dynamic
+    # pkgver()), evaluate pkgver() first so it reflects current upstream sources.
+    if grep -q '^[[:space:]]*pkgver()' "$dir/PKGBUILD" 2>/dev/null; then
+        ( cd "$dir" && makepkg --nobuild -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" >/dev/null 2>&1 ) || true
+    fi
+    ( cd "$dir" && makepkg --printsrcinfo > .SRCINFO 2>/dev/null ) || true
+
+    # Fast-path: if the package is already published in the repository at the
+    # current version and release, reuse the existing signed packages directly
+    # and skip redundant dependency resolution and compilation.
+    if [ -n "${PUBLISHED_ASSETS:-}" ] && [ -f "$dir/.SRCINFO" ]; then
+        if python "$ROOT/scripts/repo_safety.py" reuse-pkg "$dir/.SRCINFO" "$PUBLISHED_ASSETS" "$OUTDIR" "$LIST"; then
+            echo "  reused $name from published release (up to date)"
+            built=$((built+1))
+            case "$base" in local|dots|mainstream-git) ;; *) base_done[$base]=ok ;; esac
+            continue
+        fi
+    fi
+
     # Install build/runtime deps that resolve from the official repos. Provider-
     # aware (pacman -Sp), so virtuals like cargo (provided by rust, needed by
     # topgrade) install too; AUR-only deps are skipped — we don't pull the AUR.
@@ -291,18 +320,9 @@ for entry in "${entries[@]}"; do
         sudo pacman -S --needed --noconfirm --asdeps "${official[@]}" || true
     fi
 
-    sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
-    # AUR maintainer PGP keys aren't imported, so source PGP is skipped for all;
-    # source checksums are verified except for the unstable-tarball allowlist.
-    verify=(--skippgpcheck)
-    case "$skip_integ_pkgs" in *" $name "*) verify=(--skipinteg) ;; esac
-    check=()
-    case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
-    patch_pkgbuild "$name" "$dir"
     # A PKGBUILD that decides what to compile in by looking at the build machine
     # has to find it there. sunshine reads `pacman -Qi cuda` to pick its capture
     # path, and the answer here is baked into the binary every NVIDIA host runs.
-    extra_dep=""; mkenv=()
     case "$name" in
     sunshine)
         if sudo pacman -S --needed --noconfirm --asdeps cuda; then
