@@ -15,11 +15,12 @@ under a fixed tag, giving pacman a stable `Server` URL.
 | File | Purpose |
 |------|---------|
 | `packages.list` | Source of truth: one AUR package per line (`name` or `name::pkgbase`). **FOSS only** — no proprietary/non-redistributable packages. |
-| `build-repo.sh` | Builds every listed package (no AUR helper), signs them, and assembles `out/mainstream.db` + `*.pkg.tar.zst`. |
+| `build-repo.sh` | Verifies upstream source checksums and PGP signatures, builds every listed package (no AUR helper), signs them, and assembles `out/mainstream.db` + `*.pkg.tar.zst`. |
 | `scripts/repo_safety.py` | Assigns rebuild subreleases, verifies signed outputs, and publishes immutable packages with a retention ledger. |
 | `scripts/mirror-repo.sh` | Checks existing mirror files, uploads missing packages, verifies them, then updates databases. |
 | `.github/workflows/build.yml` | CI: build → sign → publish to the `mainstream-repo` Release. |
-| `keys/mainstream.pub` | Public half of the signing key (committed; clients import it). |
+| `keys/mainstream.pub` | Public half of the repository signing key (committed; clients import it). |
+| `keys/upstream/*.asc` | Pinned upstream PGP public keys for recipes that declare `validpgpkeys`. |
 
 ## How clients consume it
 

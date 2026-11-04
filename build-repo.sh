@@ -116,13 +116,30 @@ sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
 # already leaves every package it produces in out/.
 declare -A base_done=()
 
-# Packages whose upstream source is a forge "tag archive" (GitLab/GitHub) that
-# the host regenerates on demand with non-reproducible gzip output, so the
-# sha256 recorded in the PKGBUILD drifts from what actually downloads and
-# makepkg fails the checksum on a tarball that is in fact correct. These skip
-# source-integrity verification; every other package keeps full checksums.
-#   ckbcomp -> console-setup-*.tar.gz from salsa.debian.org (GitLab archive)
-skip_integ_pkgs=" ckbcomp "
+# Import pinned upstream PGP keys so makepkg verifies source signatures without
+# relying on external keyservers for existing packages.
+for k in "$ROOT"/keys/upstream/*.asc; do
+    [ -f "$k" ] && gpg --import "$k" >/dev/null 2>&1 || true
+done
+
+import_pgp_keys() {
+    local dir="$1" key keys
+    if [ -d "$dir/keys/pgp" ]; then
+        for key in "$dir"/keys/pgp/*.asc; do
+            [ -f "$key" ] && gpg --import "$key" >/dev/null 2>&1 || true
+        done
+    fi
+    keys="$(cd "$dir" && makepkg --printsrcinfo 2>/dev/null \
+        | sed -nE 's/^[[:space:]]*validpgpkeys = //p')"
+    [ -n "$keys" ] || return 0
+    for key in $keys; do
+        gpg --list-keys "$key" >/dev/null 2>&1 && continue
+        echo "  pgp: importing upstream key $key"
+        gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys "$key" >/dev/null 2>&1 \
+            || gpg --keyserver hkps://keys.openpgp.org --recv-keys "$key" >/dev/null 2>&1 \
+            || echo "!! pgp: could not import $key from keyservers" >&2
+    done
+}
 
 # Packages whose check() cannot run in this container. The runner hands the
 # build a stdout/stderr owned by root, and dropping to the build user makes
@@ -190,15 +207,15 @@ build_package() {
             # The real build reuses these prepared sources, so prepare() is not
             # run twice and cannot reset the rebuild's new pkgrel afterward.
             env "${mkenv[@]}" makepkg --nobuild -f --noconfirm --nodeps \
-                "${verify[@]}" "${check[@]}" || exit 1
+                "${check[@]}" || exit 1
             env "${mkenv[@]}" makepkg --printsrcinfo > .SRCINFO || exit 1
             python "$ROOT/scripts/repo_safety.py" bump-pkgrel \
                 PKGBUILD .SRCINFO "$PUBLISHED_ASSETS" || exit 1
             env "${mkenv[@]}" makepkg --noextract -f --noconfirm --nodeps \
-                "${verify[@]}" "${check[@]}" "${sign[@]}"
+                "${check[@]}" "${sign[@]}"
         else
             env "${mkenv[@]}" makepkg -f --noconfirm --nodeps \
-                "${verify[@]}" "${check[@]}" "${sign[@]}"
+                "${check[@]}" "${sign[@]}"
         fi
     )
 }
@@ -268,19 +285,16 @@ for entry in "${entries[@]}"; do
         fi
     fi
 
-    # AUR maintainer PGP keys aren't imported, so source PGP is skipped for all;
-    # source checksums are verified except for the unstable-tarball allowlist.
-    verify=(--skippgpcheck)
-    case "$skip_integ_pkgs" in *" $name "*) verify=(--skipinteg) ;; esac
     check=()
     case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
     patch_pkgbuild "$name" "$dir"
+    import_pgp_keys "$dir"
     extra_dep=""; mkenv=()
 
     # Generate .SRCINFO to inspect package metadata. For VCS packages (with dynamic
     # pkgver()), evaluate pkgver() first so it reflects current upstream sources.
     if grep -q '^[[:space:]]*pkgver()' "$dir/PKGBUILD" 2>/dev/null; then
-        ( cd "$dir" && makepkg --nobuild -f --noconfirm --nodeps "${verify[@]}" "${check[@]}" >/dev/null 2>&1 ) || true
+        ( cd "$dir" && makepkg --nobuild -f --noconfirm --nodeps "${check[@]}" >/dev/null 2>&1 ) || true
     fi
     ( cd "$dir" && makepkg --printsrcinfo > .SRCINFO 2>/dev/null ) || true
 
