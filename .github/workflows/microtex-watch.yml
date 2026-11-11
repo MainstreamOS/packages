@@ -1,0 +1,24 @@
+name: Watch MicroTeX dependencies and upstream commits
+
+on:
+  schedule:
+    - cron: "37 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: watch-mainstream-microtex
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Request a signed rebuild when MicroTeX dependencies change or upstream commits arrive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch-microtex.py
