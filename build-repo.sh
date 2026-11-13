@@ -194,6 +194,40 @@ patch_pkgbuild() {
             echo "!! patch: obs-move-transition — the CXX waiver this patch keys on is gone; the build may fail."
         fi
         ;;
+    sunshine)
+        # System ships newer Boost than the exact 1.89.0 Sunshine requests, so
+        # cmake/dependencies/Boost_Sunshine.cmake falls back to FetchContent
+        # Boost 1.89.0. CMake 4.5.0 enforces path-boundary prefixes in
+        # source_group(TREE ...), rejecting Boost 1.89.0 libs/locale/CMakeLists.txt:236
+        # (include/boost/locale vs include/boost/locale.hpp). Inject a
+        # FetchContent PATCH_COMMAND in prepare() (runs during makepkg --nobuild
+        # before --noextract) to widen the TREE prefix to include/boost.
+        if grep -q 'Boost_Sunshine\.cmake' "$pkgbuild"; then
+            echo "  patch: sunshine already patches Boost_Sunshine.cmake — upstream fixed it, drop this patch."
+        elif sed -n '/^prepare() {/,/^}/p' "$pkgbuild" | grep -qE '^[[:space:]]*cd "\$pkgname"[[:space:]]*$'; then
+            local snippet
+            snippet="$(cat <<'EOF'
+    if [ -f cmake/dependencies/Boost_Sunshine.cmake ] && ! grep -q 'PATCH_COMMAND' cmake/dependencies/Boost_Sunshine.cmake; then
+        sed -i 's#^\([[:space:]]*URL_HASH \${BOOST_HASH}\)$#\1\n                PATCH_COMMAND sed -i [[s|CMAKE_CURRENT_SOURCE_DIR}/include/boost/locale|CMAKE_CURRENT_SOURCE_DIR}/include/boost|]] libs/locale/CMakeLists.txt#' cmake/dependencies/Boost_Sunshine.cmake
+    fi
+EOF
+)"
+            SNIPPET="$snippet" awk '
+                /^prepare\(\) \{/ { in_prep = 1 }
+                in_prep && /^[[:space:]]*cd "\$pkgname"[[:space:]]*$/ {
+                    print
+                    print ENVIRON["SNIPPET"]
+                    in_prep = 0
+                    next
+                }
+                /^}/ { in_prep = 0 }
+                { print }
+            ' "$pkgbuild" > "$pkgbuild.tmp" && mv "$pkgbuild.tmp" "$pkgbuild"
+            echo "  patch: sunshine — injected FetchContent PATCH_COMMAND for Boost.Locale CMake 4.5 compatibility."
+        else
+            echo "!! patch: sunshine — prepare() cd \"\$pkgname\" anchor is gone; the Boost/CMake 4.5 patch was not applied."
+        fi
+        ;;
     esac
 }
 
