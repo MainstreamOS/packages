@@ -87,7 +87,7 @@ def watch(repository, dry_run=False):
 
     published_name = None
     for name in state.get("current", {}):
-        if name.startswith("mainstream-microtex-git-"):
+        if name.startswith("mainstream-microtex-git-") and name.endswith(".pkg.tar.zst"):
             published_name = name
             break
 
@@ -105,15 +105,22 @@ def watch(repository, dry_run=False):
         pub_rev = None
         pub_commit = None
         pub_pkgrel = None
+        pub_pkgrel_str = None
     else:
         print(f"Published package asset: {published_name}")
-        match = re.fullmatch(r"mainstream-microtex-git-r(\d+)\.([0-9a-fA-F]+)-(\d+)-x86_64\.pkg\.tar\.zst", published_name)
+        # pkgrel may be dotted (e.g. "5.1" for a rebuild), so accept 1+ numeric parts.
+        match = re.fullmatch(
+            r"mainstream-microtex-git-r(\d+)\.([0-9a-fA-F]+)-(\d+(?:\.\d+)*)-x86_64\.pkg\.tar\.zst",
+            published_name,
+        )
         if not match:
             raise ValueError(f"unrecognized published microtex filename: {published_name}")
         pub_rev = match.group(1)
         pub_commit = match.group(2)
-        pub_pkgrel = int(match.group(3))
-        print(f"Published microtex rev: r{pub_rev}, commit: {pub_commit}, pkgrel: {pub_pkgrel}")
+        pub_pkgrel_str = match.group(3)
+        # Tuple of ints so "5.10" sorts after "5.9" (a float would not).
+        pub_pkgrel = tuple(int(part) for part in pub_pkgrel_str.split("."))
+        print(f"Published microtex rev: r{pub_rev}, commit: {pub_commit}, pkgrel: {pub_pkgrel_str}")
 
         # Check commit match
         if not upstream_sha.startswith(pub_commit):
@@ -152,9 +159,9 @@ def watch(repository, dry_run=False):
         if not has_gtkmm_so:
             missing_pins.append("libgtkmm-3.0.so")
 
-        if missing_pins or pub_pkgrel < 5:
+        if missing_pins or pub_pkgrel < (5,):
             rebuild_reasons.append(
-                f"Published package is at pkgrel {pub_pkgrel} and lacks required pins: {', '.join(missing_pins) if missing_pins else 'none'}"
+                f"Published package is at pkgrel {pub_pkgrel_str} and lacks required pins: {', '.join(missing_pins) if missing_pins else 'none'}"
             )
 
     # Check Arch tinyxml2 major version
