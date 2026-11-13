@@ -10,11 +10,17 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 # Allow importing repo_safety when run from repo root or scripts dir
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repo_safety import GitHub
+
+
+DOTS_REPOSITORY = "MainstreamOS/dots-hyprland"
+PKGBUILD_PATH = "sdata/dist-arch/mainstream-microtex-git/PKGBUILD"
+SONAME_PINS = ("libcairomm-1.0.so", "libgtkmm-3.0.so")
 
 
 def fetch_json(url):
@@ -39,13 +45,22 @@ def parse_desc(desc_text):
     return fields
 
 
+def stamp(text):
+    """A time from GitHub or archlinux.org, or None when it cannot be read."""
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def get_upstream_commit():
+    """The sha of upstream's newest commit and when it was committed."""
     try:
         out = subprocess.check_output(
             ["gh", "api", "repos/end-4/MicroTeX/commits/master"],
             text=True, stderr=subprocess.DEVNULL,
         )
-        return json.loads(out)["sha"]
+        commit = json.loads(out)
     except Exception:
         url = "https://api.github.com/repos/end-4/MicroTeX/commits/master"
         req = urllib.request.Request(url, headers={"User-Agent": "watch-microtex/1.0"})
@@ -53,59 +68,60 @@ def get_upstream_commit():
         if token:
             req.add_header("Authorization", f"Bearer {token}")
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.load(resp)["sha"]
+            commit = json.load(resp)
+    return commit["sha"], stamp(commit["commit"]["committer"]["date"])
+
+
+def get_packaging_time():
+    """When the build file in the dotfiles repository last changed, or None."""
+    try:
+        out = subprocess.check_output(
+            ["gh", "api", f"repos/{DOTS_REPOSITORY}/commits?path={PKGBUILD_PATH}&per_page=1"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        return stamp(json.loads(out)[0]["commit"]["committer"]["date"])
+    except Exception:
+        return None
 
 
 def watch(repository, dry_run=False):
+    # A rebuild is asked for only when something it is built from is newer than the published
+    # build. The package name cannot tell: its version is fixed in the build file, so the commit
+    # it names stays the same however often it is rebuilt.
+    changed = {}
+
     # 1. Check Arch Linux package metadata
     arch_packages = {}
     for pkg in ["tinyxml2", "gtkmm3", "cairomm", "gtksourceviewmm"]:
         arch_packages[pkg] = fetch_json(f"https://archlinux.org/packages/extra/x86_64/{pkg}/json/")
-
-    tinyxml2 = arch_packages["tinyxml2"]
-    tinyxml2_ver = tinyxml2["pkgver"]
-    tinyxml2_rel = tinyxml2["pkgrel"]
+        version = f"{arch_packages[pkg]['pkgver']}-{arch_packages[pkg]['pkgrel']}"
+        print(f"Arch {pkg}: {version}")
+        changed[f"Arch {pkg} {version}"] = stamp(arch_packages[pkg].get("last_update"))
+    tinyxml2_ver = arch_packages["tinyxml2"]["pkgver"]
     tinyxml2_major = int(tinyxml2_ver.split(".")[0])
-    print(f"Arch tinyxml2: {tinyxml2_ver}-{tinyxml2_rel} (major: {tinyxml2_major})")
-
-    gtkmm3 = arch_packages["gtkmm3"]
-    print(f"Arch gtkmm3: {gtkmm3['pkgver']}-{gtkmm3['pkgrel']}")
-
-    cairomm = arch_packages["cairomm"]
-    print(f"Arch cairomm: {cairomm['pkgver']}-{cairomm['pkgrel']}")
-
-    gtksourceviewmm = arch_packages["gtksourceviewmm"]
-    print(f"Arch gtksourceviewmm: {gtksourceviewmm['pkgver']}-{gtksourceviewmm['pkgrel']}")
 
     # 2. Check upstream MicroTeX commit
-    upstream_sha = get_upstream_commit()
+    upstream_sha, upstream_time = get_upstream_commit()
     print(f"Upstream end-4/MicroTeX master commit: {upstream_sha}")
+    changed[f"upstream MicroTeX commit {upstream_sha[:7]}"] = upstream_time
+    changed["the package's build file"] = get_packaging_time()
 
     # 3. Check published mainstream-microtex-git asset and database
     gh = GitHub(repository)
     state = gh.snapshot()
+    by_name = {a["name"]: a for a in state.get("assets", [])}
 
     published_name = None
-    for name in state.get("current", {}):
+    for name in list(state.get("current", {})) + list(by_name):
         if name.startswith("mainstream-microtex-git-") and name.endswith(".pkg.tar.zst"):
             published_name = name
             break
 
-    if not published_name:
-        for asset in state.get("assets", []):
-            name = asset["name"]
-            if name.startswith("mainstream-microtex-git-") and name.endswith(".pkg.tar.zst"):
-                published_name = name
-                break
-
     rebuild_reasons = []
+    problems = []
 
     if not published_name:
         rebuild_reasons.append("No published mainstream-microtex-git package found in repository")
-        pub_rev = None
-        pub_commit = None
-        pub_pkgrel = None
-        pub_pkgrel_str = None
     else:
         print(f"Published package asset: {published_name}")
         # pkgrel may be dotted (e.g. "5.1" for a rebuild), so accept 1+ numeric parts.
@@ -115,21 +131,16 @@ def watch(repository, dry_run=False):
         )
         if not match:
             raise ValueError(f"unrecognized published microtex filename: {published_name}")
-        pub_rev = match.group(1)
-        pub_commit = match.group(2)
-        pub_pkgrel_str = match.group(3)
-        # Tuple of ints so "5.10" sorts after "5.9" (a float would not).
-        pub_pkgrel = tuple(int(part) for part in pub_pkgrel_str.split("."))
-        print(f"Published microtex rev: r{pub_rev}, commit: {pub_commit}, pkgrel: {pub_pkgrel_str}")
-
-        # Check commit match
-        if not upstream_sha.startswith(pub_commit):
-            rebuild_reasons.append(
-                f"Upstream MicroTeX commit ({upstream_sha[:7]}) differs from published commit ({pub_commit})"
-            )
+        built = stamp(by_name.get(published_name, {}).get("updated_at"))
+        print(f"Published microtex rev: r{match.group(1)}, commit: {match.group(2)}, "
+              f"pkgrel: {match.group(3)}, built: {built}")
+        if built is None:
+            rebuild_reasons.append("The published package's build time is unknown")
+        else:
+            rebuild_reasons += [f"{what} is newer than the published build ({when} > {built})"
+                                for what, when in changed.items() if when and when > built]
 
     # 4. Check dependencies in mainstream.db
-    by_name = {a["name"]: a for a in state.get("assets", [])}
     published_depends = []
     if "mainstream.db" in by_name:
         with tempfile.TemporaryDirectory() as folder:
@@ -145,32 +156,28 @@ def watch(repository, dry_run=False):
 
     print(f"Published dependencies in mainstream.db: {published_depends}")
 
-    # Check for soname pins and tinyxml2 version bounds
-    has_tinyxml2_pin = "tinyxml2>=11" in published_depends or any(d.startswith("tinyxml2>=") for d in published_depends)
-    has_cairomm_so = "libcairomm-1.0.so" in published_depends
-    has_gtkmm_so = "libgtkmm-3.0.so" in published_depends
-
-    if pub_pkgrel is not None:
-        missing_pins = []
-        if not has_tinyxml2_pin:
-            missing_pins.append("tinyxml2>=11")
-        if not has_cairomm_so:
-            missing_pins.append("libcairomm-1.0.so")
-        if not has_gtkmm_so:
-            missing_pins.append("libgtkmm-3.0.so")
-
-        if missing_pins or pub_pkgrel < (5,):
-            rebuild_reasons.append(
-                f"Published package is at pkgrel {pub_pkgrel_str} and lacks required pins: {', '.join(missing_pins) if missing_pins else 'none'}"
-            )
-
-    # Check Arch tinyxml2 major version
-    if tinyxml2_major != 11:
-        rebuild_reasons.append(
-            f"Arch tinyxml2 major version changed: {tinyxml2_ver} (major {tinyxml2_major} != 11)"
-        )
+    if published_name:
+        # makepkg completes a soname pin with the version it built against ("libfoo.so=1-64").
+        missing_pins = [pin for pin in SONAME_PINS
+                        if not any(d == pin or d.startswith(pin + "=") for d in published_depends)]
+        if not any(d.startswith("tinyxml2>=") for d in published_depends):
+            missing_pins.append("tinyxml2>=")
+        # The range the published package accepts, from its own pins.
+        accepted = [int(m.group(2)) if m.group(1) == "<" else int(m.group(2)) + 1
+                    for m in (re.fullmatch(r"tinyxml2(<|<=)(\d+)(?:\..*)?", d) for d in published_depends) if m]
+        if accepted and tinyxml2_major >= min(accepted):
+            missing_pins.append(f"a tinyxml2 range that takes Arch's {tinyxml2_ver}")
+        # A rebuild only helps when the build file changed since; otherwise it would be asked
+        # for again on every run and publish the same package under a new release number.
+        if missing_pins and not rebuild_reasons:
+            problems.append("The published package lacks " + ", ".join(missing_pins)
+                            + f", and nothing it is built from changed since. Fix {PKGBUILD_PATH} in {DOTS_REPOSITORY}.")
 
     # Decision
+    if problems:
+        for problem in problems:
+            print(f"::error::{problem}")
+        raise SystemExit(1)
     if not rebuild_reasons:
         print("Published mainstream-microtex-git is up to date and satisfies all dependency pins. No rebuild needed.")
         return
