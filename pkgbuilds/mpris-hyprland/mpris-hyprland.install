@@ -9,10 +9,41 @@ pre_upgrade() {
         fi
     done
 }
+
+# Runs each argument as one systemctl --user command line, as each user whose
+# user manager is running now. A chroot such as the ISO install has none.
+_user_systemctl() {
+    local socket uid gid command
+    systemd-detect-virt --chroot >/dev/null 2>&1 && return 0
+    [ -d /run/systemd/system ] || return 0
+    for socket in /run/user/*/systemd/private; do
+        [ -S "$socket" ] || continue
+        uid=${socket#/run/user/}
+        uid=${uid%%/*}
+        case $uid in 0|*[!0-9]*) continue ;; esac
+        gid=$(id -g -- "$uid" 2>/dev/null) || continue
+        for command in "$@"; do
+            timeout -k 2 10 setpriv --reuid="$uid" --regid="$gid" --clear-groups -- \
+                env -i PATH="$PATH" XDG_RUNTIME_DIR="/run/user/$uid" SYSTEMD_BUS_TIMEOUT=8s \
+                systemctl --user --quiet $command >/dev/null 2>&1 || break
+        done
+    done
+    return 0
+}
+
 post_install() {
     python3 /usr/lib/mpris-hyprland/manage-policies.py install
+    local status=$?
+    # Logins and Flatpak installs start these on their own; this covers whoever
+    # is logged in now, so this update already sets their browsers up.
+    _user_systemctl daemon-reload \
+        "start --no-block mpris-hyprland-setup-browsers.service mpris-hyprland-setup-browsers.path"
+    return "$status"
 }
 post_upgrade() { post_install; }
 pre_remove() {
+    # Copies already made inside Flatpak browsers stay; setup-browsers --user
+    # --remove, run before removing the package, deletes them.
+    _user_systemctl "stop --no-block mpris-hyprland-setup-browsers.path"
     python3 /usr/lib/mpris-hyprland/manage-policies.py remove
 }

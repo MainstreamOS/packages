@@ -1,6 +1,6 @@
 # Maintainer: blackdroid <blackdriod@gmail.com>
 pkgname=mpris-hyprland
-pkgver=0.2.4
+pkgver=0.2.5
 _extver=0.2.3
 pkgrel=1
 pkgdesc="Per-window MPRIS bridge for Firefox/Zen and Chromium — Media Session metadata, position, artwork, per-tab volume on D-Bus for Hyprland/Wayland status bars (lighter plasma-browser-integration alternative)"
@@ -62,6 +62,13 @@ package() {
     install -Dm0755 packaging/manage-policies.py "$pkgdir/usr/lib/$pkgname/manage-policies.py"
     install -Dm0755 packaging/setup-browsers "$pkgdir/usr/lib/$pkgname/setup-browsers"
     install -Dm0644 -t "$pkgdir/usr/lib/$pkgname/policies" packaging/policies/firefox.json packaging/policies/zen.json
+    install -Dm0644 -t "$pkgdir/usr/lib/systemd/user" \
+        packaging/systemd/mpris-hyprland-setup-browsers.service packaging/systemd/mpris-hyprland-setup-browsers.path
+    install -d "$pkgdir/usr/lib/systemd/user/default.target.wants" "$pkgdir/usr/lib/systemd/user/paths.target.wants"
+    ln -sf ../mpris-hyprland-setup-browsers.service \
+        "$pkgdir/usr/lib/systemd/user/default.target.wants/mpris-hyprland-setup-browsers.service"
+    ln -sf ../mpris-hyprland-setup-browsers.path \
+        "$pkgdir/usr/lib/systemd/user/paths.target.wants/mpris-hyprland-setup-browsers.path"
 
     for directory in /etc/chromium/native-messaging-hosts /etc/opt/chrome/native-messaging-hosts /etc/opt/edge/native-messaging-hosts; do
         sed 's|@HOST_BINARY@|/usr/bin/mpris-hyprland-host|g' packaging/chromium-host.json.in \
