@@ -1,0 +1,36 @@
+# Based on the Arch Linux alsa-ucm-conf package.
+pkgname=alsa-ucm-conf
+pkgver=1.2.16.1
+pkgrel=1.1
+pkgdesc='ALSA Use Case Manager configuration (and topologies)'
+arch=(any)
+url='https://alsa-project.org/'
+license=(BSD-3-Clause)
+_tas2783_commit=182d0122a7d98cfa5f2d42d3cb8e9e1b8697b69a
+source=(
+  "${url}files/pub/lib/$pkgname-$pkgver.tar.bz2"{,.sig}
+  "tas2783-$_tas2783_commit.patch::https://github.com/alsa-project/alsa-ucm-conf/commit/$_tas2783_commit.patch"
+  'tas2783-speaker-switches.patch'
+)
+sha512sums=(
+  'df25a29afc3b87347fa89f3fe60ebda68068acdaf68e081b58455ebee319c21e82af4076ba1f10781ba620a9e8efa6e65db27c5989d63a429d44a715dbd1d460'
+  'SKIP'
+  'e67596efddc93a986f08bc6aa29e3cec4e6611f69df859c52e091e491fd5c33ef8a252cf6d642e145c2e98cd6b9c23a947a0850f3f307dbd05599e61dbe85861'
+  '5f20d03b12839a5d96f112b9f644f705afd862ec2be57c960c6f3668bc2cf125ce7987fd572026b30395075bcc1377bfdcb8dabadda3689e205a5ab9853d62bd'
+)
+validpgpkeys=('F04DF50737AC1A884C4B3D718380596DA6E59C91') # ALSA Release Team
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  patch -Np1 < "$srcdir/tas2783-$_tas2783_commit.patch"
+  patch -Np1 < "$srcdir/tas2783-speaker-switches.patch"
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -dm 755 "$pkgdir/usr/share/alsa"
+  cp -a ucm2 "$pkgdir/usr/share/alsa/"
+  install -Dm 644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+  install -Dm 644 README.md -t "$pkgdir/usr/share/doc/$pkgname"
+  install -Dm 644 ucm2/README.md -t "$pkgdir/usr/share/doc/$pkgname/ucm2"
+}

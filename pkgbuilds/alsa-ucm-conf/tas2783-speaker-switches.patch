@@ -1,0 +1,72 @@
+Subject: [PATCH] ucm2: tas2783: set only the speaker switches the card exposes
+
+Use the full element names from alsa-ucm-conf PR #886 and check that
+each switch exists before adding it to a sequence. Two-amp layouts
+can omit the second pair of switches.
+
+diff --git a/ucm2/codecs/tas2783/init.conf b/ucm2/codecs/tas2783/init.conf
+index 6e4f23d..493f470 100644
+--- a/ucm2/codecs/tas2783/init.conf
++++ b/ucm2/codecs/tas2783/init.conf
+@@ -1,8 +1,10 @@
+-# tas2783 specific switch control settings
+-
+-BootSequence [
+-	cset "name='Left Spk' on"
+-	cset "name='Right Spk' on"
+-	cset "name='Left Spk2' on"
+-	cset "name='Right Spk2' on"
+-]
++# TAS2783 layouts expose different numbers of speaker switches.
++DefineMacro.Tas2783BootSwitch.If.present {
++	Condition {
++		Type ControlExists
++		Control "name='${var:__Switch} Switch'"
++	}
++	True.BootSequence [
++		cset "name='${var:__Switch} Switch' on"
++	]
++}
+@@ -9,0 +12,4 @@ BootSequence [
++Macro.0.Tas2783BootSwitch { Switch "Left Spk" }
++Macro.1.Tas2783BootSwitch { Switch "Right Spk" }
++Macro.2.Tas2783BootSwitch { Switch "Left Spk2" }
++Macro.3.Tas2783BootSwitch { Switch "Right Spk2" }
+diff --git a/ucm2/sof-soundwire/tas2783.conf b/ucm2/sof-soundwire/tas2783.conf
+index 2106f94..513f0f7 100644
+--- a/ucm2/sof-soundwire/tas2783.conf
++++ b/ucm2/sof-soundwire/tas2783.conf
+@@ -2,0 +3,15 @@
++DefineMacro.Tas2783SpeakerSwitch.If.present {
++	Condition {
++		Type ControlExists
++		Control "name='${var:__Switch} Switch'"
++	}
++	True {
++		EnableSequence [
++			cset "name='${var:__Switch} Switch' on"
++		]
++		DisableSequence [
++			cset "name='${var:__Switch} Switch' off"
++		]
++	}
++}
++
+@@ -6,13 +21,4 @@ SectionDevice."Speaker" {
+-	EnableSequence [
+-		cset "name='Left Spk Switch' on"
+-		cset "name='Right Spk Switch' on"
+-		cset "name='Left Spk2 Switch' on"
+-		cset "name='Right Spk2 Switch' on"
+-	]
+-
+-	DisableSequence [
+-		cset "name='Left Spk Switch' off"
+-		cset "name='Right Spk Switch' off"
+-		cset "name='Left Spk2 Switch' off"
+-		cset "name='Right Spk2 Switch' off"
+-	]
++	Macro.0.Tas2783SpeakerSwitch { Switch "Left Spk" }
++	Macro.1.Tas2783SpeakerSwitch { Switch "Right Spk" }
++	Macro.2.Tas2783SpeakerSwitch { Switch "Left Spk2" }
++	Macro.3.Tas2783SpeakerSwitch { Switch "Right Spk2" }

@@ -86,6 +86,8 @@ limine-mkinitcpio-hook
 limine-snapper-sync
 
 # ── System / build deps ──
+# Drop the TAS2783 backport once the official package ships the speaker fixes.
+alsa-ucm-conf::local
 ckbcomp
 python312
 
