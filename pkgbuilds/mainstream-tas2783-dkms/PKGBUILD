@@ -1,0 +1,36 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+pkgname=mainstream-tas2783-dkms
+pkgver=7.3
+pkgrel=1
+pkgdesc='TAS2783 speaker amp driver for Linux 7.3 that plays both speakers on HP laptops'
+url='https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git'
+arch=(any)
+license=(GPL-2.0-only)
+depends=(
+  dkms
+  linux-headers
+)
+source=(
+  "tas2783-sdw.c::$url/plain/sound/soc/codecs/tas2783-sdw.c?h=v$pkgver"
+  "tas2783.h::$url/plain/sound/soc/codecs/tas2783.h?h=v$pkgver"
+  stereo.patch
+  Makefile
+  dkms.conf
+)
+sha256sums=(
+  '41e7c78a012da1b2d645f1ea82429f19cd3816cf221d3bd17bd4b8070efdc9d5'
+  'f52b91e8f61869677afb29feaca29dcd25fd4a9463673e7d83072faefb0f02e8'
+  '66582ac6cb287e0deaa7dae361fb54fd6802d325e63f101923fe6aab9e1dc309'
+  '10ddeb97c8b18cd77941be14cf71ae5edaca89e19a2b6f60a13a6e3eb9edf868'
+  '261fe3715789f6d8360c00f9415e3abaa6c943d98b886c449b4aae4e796a3146'
+)
+
+prepare() {
+  cp --remove-destination "$(readlink -f tas2783-sdw.c)" tas2783-sdw.c
+  patch -Np1 < stereo.patch
+}
+
+package() {
+  install -Dm644 -t "$pkgdir/usr/src/mainstream-tas2783-$pkgver" \
+    tas2783-sdw.c tas2783.h Makefile dkms.conf
+}

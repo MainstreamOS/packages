@@ -1,0 +1,40 @@
+Subject: [PATCH] ASoC: tas2783-sdw: send both channels to each amp again
+
+Linux 7.3 gives each TAS2783 amp only one channel of a stereo stream. On HP
+boards the amps pick their own channel through their firmware, so one speaker
+goes silent and the other plays the wrong side. Linux 7.4 dropped the split in
+f42fbd560cd8 ("ASoC: tas2783-sdw: add firmware download status check").
+
+--- a/tas2783-sdw.c
++++ b/tas2783-sdw.c
+@@ -1002,30 +1002,6 @@
+ 	snd_sdw_params_to_config(substream, params,
+ 				 &stream_config, &port_config);
+ 
+-	/*
+-	 * The two mono amps each render one channel of the stereo stream:
+-	 * snd_sdw_params_to_config() hands every codec the full mask for
+-	 * playback, which leaves the pair in mirror mode and one channel
+-	 * unreproduced.  Claim a single channel instead, keyed off the
+-	 * machine-assigned component prefix rather than the SoundWire
+-	 * address, which is board-specific: soc_sdw_ti_amp.c names the amps
+-	 * tas2783-1..4.
+-	 *
+-	 * Which side an amp then renders does not follow from the bit that
+-	 * is set - sdw_compute_slave_ports() advances the payload offset by
+-	 * the popcount of ch_mask and never looks at which bit it is - but
+-	 * from the amp's position in the codec order of the DAI link, which
+-	 * on these boards matches the prefix numbering.
+-	 */
+-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
+-	    params_channels(params) == 2 && component->name_prefix) {
+-		const char *idx_str = strrchr(component->name_prefix, '-');
+-		unsigned long idx;
+-
+-		if (idx_str && !kstrtoul(idx_str + 1, 10, &idx) && idx)
+-			port_config.ch_mask = (idx & 1) ? BIT(0) : BIT(1);
+-	}
+-
+ 	/* port 1 for playback */
+ 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+ 		port_config.num = 1;
