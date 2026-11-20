@@ -1,6 +1,6 @@
 # Maintainer: blackdroid <blackdriod@gmail.com>
 pkgname=mpris-hyprland
-pkgver=0.2.5
+pkgver=0.2.6
 _extver=0.2.3
 pkgrel=1
 pkgdesc="Per-window MPRIS bridge for Firefox/Zen and Chromium — Media Session metadata, position, artwork, per-tab volume on D-Bus for Hyprland/Wayland status bars (lighter plasma-browser-integration alternative)"
