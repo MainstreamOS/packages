@@ -1,0 +1,27 @@
+name: Watch the packages built from dots-hyprland
+
+# A build file changed in dots-hyprland does not start a build here, so the
+# packages listed as ::dots are compared with the published ones. Active builds
+# are not duplicated.
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: watch-mainstream-dots
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Request a signed rebuild when a dots-hyprland build file is newer than its published package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch-dots.py
