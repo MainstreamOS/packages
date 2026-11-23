@@ -1,0 +1,29 @@
+name: Watch the libraries published packages are built against
+
+# A package built here names the exact library versions it was built against.
+# When Arch moves one of those libraries on, every user's update stops on that
+# package until it is rebuilt, and the weekly build is too far away. Each hour
+# the published packages are compared with what Arch ships, and the ones left
+# behind are rebuilt. Active builds are not duplicated.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: watch-mainstream-libraries
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Request a signed rebuild of packages that need a library version Arch no longer ships
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch-libraries.py

@@ -117,3 +117,7 @@ The package replaces stock `gtk4` during a normal full system upgrade.
 The live-CSS concept and original patch are by
 [saneaspect](https://github.com/saneaspect), from
 [gtk4-live-css](https://github.com/saneaspect/gtk4-live-css).
+
+An hourly library watcher (`scripts/watch-libraries.py`) requests a rebuild of
+any published package that needs a library version Arch no longer ships, so a
+library update in Arch does not leave system updates blocked until the weekly build.

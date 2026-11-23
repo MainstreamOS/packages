@@ -75,15 +75,6 @@ def dots_changed():
     return stamp(activity[0]["timestamp"])
 
 
-def read_build_files(repository, run):
-    """Whether a finished build got as far as building, which is where it reads dots-hyprland."""
-    jobs = json.loads(subprocess.check_output([
-        "gh", "api", f"repos/{repository}/actions/runs/{run['id']}/jobs",
-    ], text=True))["jobs"]
-    return any(step["name"] == "Build signed repo" and step["conclusion"] in ("success", "failure")
-               for job in jobs for step in job.get("steps", []))
-
-
 def watch(repository, dots_dir=None, dry_run=False):
     names = dots_packages("packages.list")
     published = published_versions(GitHub(repository).snapshot()["current"])
@@ -127,7 +118,7 @@ def watch(repository, dots_dir=None, dry_run=False):
         return
     # A build that started after dots-hyprland last changed has already seen these build
     # files. Asking again would only repeat whatever kept it from publishing them.
-    if runs and stamp(runs[0]["created_at"]) > dots_changed() and read_build_files(repository, runs[0]):
+    if runs and stamp(runs[0]["created_at"]) > dots_changed() and GitHub(repository).reached_build(runs[0]):
         print("::warning::The last build already had these build files and did not publish them. "
               "Not asking again until dots-hyprland changes.")
         return

@@ -118,6 +118,13 @@ class GitHub:
         if digest and digest != "sha256:" + sha256(path):
             raise ValueError(f"download digest mismatch: {asset['name']}")
 
+    def reached_build(self, run):
+        """Whether a finished build got as far as building, which is where it reads its sources."""
+        jobs = json.loads(subprocess.check_output(
+            ["gh", "api", f"{self.api}/actions/runs/{run['id']}/jobs"], text=True))["jobs"]
+        return any(step["name"] == "Build signed repo" and step["conclusion"] in ("success", "failure")
+                   for job in jobs for step in job.get("steps", []))
+
     def matches(self, asset, path):
         digest = asset.get("digest")
         if digest:
