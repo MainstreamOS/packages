@@ -1,0 +1,68 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+
+: "${_release_url:=https://github.com/MainstreamOS/proton-mainstream/releases/download}"
+
+pkgname=proton-mainstream
+pkgver=11.14
+pkgrel=1
+pkgdesc='Steam Play compatibility tool based on GE-Proton with CachyOS extras, built for Steam Linux Runtime 4'
+arch=(x86_64)
+url='https://github.com/MainstreamOS/proton-mainstream'
+license=(
+  BSD-3-Clause
+  LGPL-2.1-or-later
+  Zlib
+  MIT
+  MPL-2.0
+  OFL-1.1
+  LicenseRef-custom
+)
+optdepends=('steam: runs Windows games with Steam Play')
+options=('!strip' '!debug' 'emptydirs')
+_relname="${pkgname}-${pkgver}"
+source=("${_relname}.tar.gz::${_release_url}/${_relname}/${_relname}.tar.gz")
+sha512sums=('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
+
+prepare() {
+  local _tree="${srcdir}/${_relname}"
+  if [[ ! -f "${_tree}/proton" ]]; then
+    error "The release has no proton script at ${_relname}/proton."
+    return 1
+  fi
+  if ! grep -Eq '"require_tool_appid"[[:space:]]+"4183110"' "${_tree}/toolmanifest.vdf" 2>/dev/null; then
+    error "The release's toolmanifest.vdf does not require Steam Linux Runtime 4 (4183110)."
+    return 1
+  fi
+}
+
+package() {
+  local _compat="${pkgdir}/usr/share/steam/compatibilitytools.d/${pkgname}"
+  local _licenses="${pkgdir}/usr/share/licenses/${pkgname}"
+
+  install -dm755 "${_compat%/*}" "${_licenses}"
+  mv "${srcdir}/${_relname}" "${_compat}"
+
+  cat > "${_compat}/compatibilitytool.vdf" <<VDF
+"compatibilitytools"
+{
+  "compat_tools"
+  {
+    "${pkgname}"
+    {
+      "install_path" "."
+      "display_name" "Proton Mainstream ${pkgver}"
+      "from_oslist"  "windows"
+      "to_oslist"    "linux"
+    }
+  }
+}
+VDF
+  chmod 644 "${_compat}/compatibilitytool.vdf"
+
+  local _lic
+  for _lic in LICENSE LICENSE.OFL LICENSE.proton PATENTS.AV1; do
+    if [[ -f "${_compat}/${_lic}" ]]; then
+      mv "${_compat}/${_lic}" "${_licenses}/${_lic}"
+    fi
+  done
+}
