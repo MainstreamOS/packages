@@ -115,6 +115,8 @@ sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
 # (xrizer and its lib32 and common halves) goes through makepkg once: one run
 # already leaves every package it produces in out/.
 declare -A base_done=()
+# Every package a ::kernel recipe makes, headers included, so the unlisted-package sweep keeps them.
+kernel_pkgs=()
 
 # Import pinned upstream PGP keys so makepkg verifies source signatures without
 # relying on external keyservers for existing packages.
@@ -257,6 +259,30 @@ build_package() {
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
+    if [ "$base" = kernel ]; then
+        # Kernels take hours and about 30 GB, so only .github/workflows/kernels.yml builds them.
+        # This run keeps whatever build is live, at any version, and never fails over a missing one.
+        echo "════ $name  (kernel: published build only) ════"
+        dir="$WORK/$name"; rm -rf "$dir"
+        if [ ! -f "$ROOT/pkgbuilds/$name/PKGBUILD" ] || ! cp -r "$ROOT/pkgbuilds/$name" "$dir" \
+           || ! ( cd "$dir" && makepkg --printsrcinfo > .SRCINFO 2>/dev/null ); then
+            echo "!! unreadable kernel recipe: pkgbuilds/$name"; failed=$((failed+1)); failures+=("$name(kernel)"); continue
+        fi
+        mapfile -t kpkgs < <(sed -nE 's/^pkgname = //p' "$dir/.SRCINFO")
+        kernel_pkgs+=("${kpkgs[@]}")
+        if [ -z "${PUBLISHED_ASSETS:-}" ]; then
+            echo "  no published snapshot: $name is left out of this repo"; continue
+        fi
+        python "$ROOT/scripts/repo_safety.py" keep-published "$dir/.SRCINFO" "$PUBLISHED_ASSETS" "$OUTDIR"
+        case $? in
+        0) echo "  kept the published $name"; built=$((built+1)) ;;
+        3) echo "  $name is not published yet; kernels.yml builds it" ;;
+        *) echo "!! could not keep the published $name"
+           failed=$((failed+1))
+           for kp in "${kpkgs[@]}"; do failures+=("$kp(kernel)"); done ;;
+        esac
+        continue
+    fi
     if [ "$base" = local ]; then
         # Build from a PKGBUILD shipped in this repo (pkgbuilds/<name>/), copied
         # into the work dir so makepkg's src/pkg output doesn't dirty the repo.
@@ -395,7 +421,7 @@ done
 # alongside the symbols font) and makepkg's default debug option adds *-debug —
 # none of those belong in the published repo.
 shopt -s nullglob
-wanted=""; for e in "${entries[@]}"; do wanted="$wanted ${e%%::*}"; done; wanted=" $wanted "
+wanted=""; for e in "${entries[@]}" "${kernel_pkgs[@]}"; do wanted="$wanted ${e%%::*}"; done; wanted=" $wanted "
 for f in "$OUTDIR"/*.pkg.tar.zst; do
     pn="$(pacman -Qpq "$f" 2>/dev/null)"
     case "$wanted" in

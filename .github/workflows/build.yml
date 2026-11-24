@@ -15,6 +15,7 @@ on:
       - packages.list
       - build-repo.sh
       - pkgbuilds/**
+      - '!pkgbuilds/linux-mainstream*/**'   # kernels.yml builds these
       - scripts/**
       - .github/workflows/build.yml
 

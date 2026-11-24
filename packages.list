@@ -4,6 +4,8 @@
 #   <pkgname>              AUR git repo name == package name
 #   <pkgname>::<pkgbase>   AUR git repo (pkgbase) differs from the package name
 #   <pkgname>::mainstream-git  MainstreamOS/<pkgname>, mainstream branch
+#   <pkgbase>::kernel   pkgbuilds/<pkgbase>, built only by kernels.yml; the main
+#                       build keeps its published packages (headers too)
 # Blank lines and #-comments are ignored.
 #
 # Every entry here is FOSS and verified against the AUR. Proprietary or

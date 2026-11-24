@@ -1,0 +1,214 @@
+name: Build kernels
+
+# Kernels run here and never in build.yml: one takes two to three hours on a standard runner and
+# about 30 GB of disk. build.yml keeps their published builds in the database (<pkgbase>::kernel in
+# packages.list); this workflow builds a listed kernel only when its recipe version is not live.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Space-separated kernel names to rebuild even when live (or "all")'
+        required: false
+        default: ''
+  push:
+    branches: [master, main]
+    paths:
+      - pkgbuilds/linux-mainstream*/**
+      - packages.list
+      - build-kernel.sh
+      - scripts/boot-test-kernel.sh
+      - .github/actions/kernel-runner/**
+      - .github/workflows/kernels.yml
+
+permissions:
+  contents: write          # publish the release assets
+
+concurrency:
+  group: build-mainstream-kernels
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: archlinux:base-devel
+    outputs:
+      kernels: ${{ steps.plan.outputs.kernels }}
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm git github-cli python
+
+      - uses: actions/checkout@v6
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Pick the kernels whose recipe version is not published
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          runuser -u builder -- env GH_TOKEN="$GH_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            python scripts/repo_safety.py snapshot "$GITHUB_WORKSPACE/published-assets.json"
+          kernels=$(runuser -u builder -- env PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" \
+            FORCE_REBUILD="${{ inputs.force_rebuild || '' }}" bash build-kernel.sh plan)
+          echo "kernels=$kernels" >> "$GITHUB_OUTPUT"
+          echo "Kernels to build: $kernels" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.kernels != '[]'
+    # The host runs the job so its preinstalled toolchains can be removed for disk space; the
+    # build and boot test run in the same Arch container image as build.yml (kernel-runner action).
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        kernel: ${{ fromJSON(needs.plan.outputs.kernels) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/kernel-runner
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          docker exec -e GPG_PRIVATE_KEY -e GPG_KEY_ID arch bash -c '
+            install -d -m700 -o builder -g builder /home/builder/.gnupg
+            printf "%s" "$GPG_PRIVATE_KEY" | runuser -u builder -- gpg --batch --import
+            printf "5\ny\n" | runuser -u builder -- gpg --batch --command-fd 0 --edit-key "$GPG_KEY_ID" trust quit'
+
+      - name: Snapshot published package filenames
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker exec -e GH_TOKEN -e GITHUB_REPOSITORY arch runuser -u builder -- \
+            python scripts/repo_safety.py snapshot "$GITHUB_WORKSPACE/published-assets.json"
+
+      - name: Build ${{ matrix.kernel }}
+        env:
+          GPGKEY: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          docker exec -e GPGKEY arch runuser -u builder -- env \
+            CI=true PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" OUTDIR="$GITHUB_WORKSPACE/out" \
+            BUILDDIR=/build MAKEFLAGS="-j$(nproc)" \
+            bash build-kernel.sh build "${{ matrix.kernel }}"
+          df -h / /mnt || true
+
+      - name: Boot ${{ matrix.kernel }}
+        # A kernel that does not boot, or whose modules do not load cleanly, is not published.
+        run: |
+          docker exec arch runuser -u builder -- bash -c \
+            'for pkg in out/"$1"-[0-9]*.pkg.tar.zst; do bash scripts/boot-test-kernel.sh "$pkg" || exit 1; done' \
+            _ "${{ matrix.kernel }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ matrix.kernel }}
+          path: |
+            out/*.pkg.tar.zst
+            out/*.pkg.tar.zst.sig
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [plan, build]
+    if: always() && needs.plan.outputs.kernels != '[]' && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Same group as build.yml, so the database is never written by two runs at once.
+    concurrency:
+      group: build-mainstream-repo
+      cancel-in-progress: false
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm git gnupg github-cli rsync openssh python
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kernel-*
+          path: out
+          merge-multiple: true
+
+      - name: Check for built kernels
+        id: built
+        run: |
+          shopt -s nullglob
+          pkgs=(out/*.pkg.tar.zst)
+          echo "count=${#pkgs[@]}" >> "$GITHUB_OUTPUT"
+          [ ${#pkgs[@]} -gt 0 ] || echo "No kernel built; nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create build user
+        if: steps.built.outputs.count != '0'
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Import signing key
+        if: steps.built.outputs.count != '0'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          install -d -m700 -o builder -g builder /home/builder/.gnupg
+          printf '%s' "$GPG_PRIVATE_KEY" | runuser -u builder -- gpg --batch --import
+          runuser -u builder -- bash -c \
+            "gpg --batch --command-fd 0 --edit-key '${{ secrets.GPG_KEY_ID }}' trust quit <<<'5
+            y'"
+
+      - name: Snapshot published package filenames
+        # Taken again here, inside the shared group: build.yml may have published since the plan.
+        if: steps.built.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runuser -u builder -- env GH_TOKEN="$GH_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            python scripts/repo_safety.py snapshot "$GITHUB_WORKSPACE/published-assets.json"
+
+      - name: Add the kernels to the published repo
+        if: steps.built.outputs.count != '0'
+        run: |
+          runuser -u builder -- env GPGKEY="${{ secrets.GPG_KEY_ID }}" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" OUTDIR="$GITHUB_WORKSPACE/out" \
+            bash build-kernel.sh assemble
+
+      - name: Publish release safely
+        if: steps.built.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runuser -u builder -- env GH_TOKEN="$GH_TOKEN" GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            python scripts/repo_safety.py publish "$GITHUB_WORKSPACE/out"
+
+      - name: Set up the SourceForge key
+        if: steps.built.outputs.count != '0'
+        env:
+          SF_KEY: ${{ secrets.SF_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 /tmp/sf
+          printf '%s\n' "$SF_KEY" > /tmp/sf/key
+          chmod 600 /tmp/sf/key
+          printf '%s\n' 'frs.sourceforge.net ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOQD35Ujalhh+JJkPvMckDlhu4dS7WH6NsOJ15iGCJLC' > /tmp/sf/known_hosts
+          chmod 600 /tmp/sf/known_hosts
+
+      - name: Mirror the repo to SourceForge
+        if: steps.built.outputs.count != '0'
+        continue-on-error: true
+        run: bash scripts/mirror-repo.sh out
+
+      - name: Fail the run for any kernel that did not build
+        if: needs.build.result != 'success'
+        run: |
+          echo "::error title=Kernels did not build::see the build jobs; the repo keeps the kernels it had"
+          exit 1

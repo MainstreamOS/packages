@@ -233,86 +233,61 @@ def bump_pkgrel(pkgbuild, srcinfo, snapshot):
     print(f"  rebuild pkgrel: {release} -> {new_release}")
 
 
-def reuse_pkg(srcinfo_path, snapshot_path, out_dir, packages_list_path=None):
-    state = read_json(snapshot_path)
-    if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
-        return False
+def split_filename(filename):
+    """Name, epoch, version, release and arch of a colon-free package filename, or None."""
+    if not filename.endswith(".pkg.tar.zst"):
+        return None
+    parts = filename[:-len(".pkg.tar.zst")].split("-")
+    if len(parts) < 4:
+        return None
+    pver_full = parts[-3]
+    if "_" in pver_full and pver_full.split("_")[0].isdigit():
+        pepoch, _, pver = pver_full.partition("_")
+    else:
+        pepoch, pver = "0", pver_full
+    return {"name": "-".join(parts[:-3]), "epoch": pepoch, "version": pver,
+            "release": parts[-2], "arch": parts[-1]}
 
-    force_rebuild = os.environ.get("FORCE_REBUILD", "").strip().split()
-    if "all" in force_rebuild:
-        return False
 
-    fields = parse_srcinfo(srcinfo_path)
-    if "pkgver" not in fields or "pkgrel" not in fields or "pkgname" not in fields:
-        return False
+def current_packages(state):
+    packages = {}
+    for filename, record in state["current"].items():
+        split = split_filename(filename)
+        if split:
+            packages[split["name"]] = dict(split, filename=filename,
+                                           sha256=record["sha256"], size=record["size"])
+    return packages
+
+
+def published_files(fields, state, pkgnames):
+    """The live files that already carry this recipe's version of every package, or None."""
     version = fields["pkgver"][0]
     epoch = fields.get("epoch", ["0"])[0]
     release = fields["pkgrel"][0]
-
-    pkgnames = fields["pkgname"]
-    if packages_list_path and Path(packages_list_path).is_file():
-        wanted = set()
-        for line in Path(packages_list_path).read_text().splitlines():
-            line = line.partition("#")[0].strip()
-            if line:
-                wanted.add(line.split("::")[0].strip())
-        target_pkgnames = [name for name in pkgnames if name in wanted]
-        if target_pkgnames:
-            pkgnames = target_pkgnames
-
-    for name in pkgnames:
-        if name in force_rebuild:
-            return False
-
-    current_packages = {}
-    for filename in state["current"]:
-        if not filename.endswith(".pkg.tar.zst"):
-            continue
-        base = filename[:-len(".pkg.tar.zst")]
-        parts = base.split("-")
-        if len(parts) < 4:
-            continue
-        arch = parts[-1]
-        prel = parts[-2]
-        pver_full = parts[-3]
-        pname = "-".join(parts[:-3])
-        if "_" in pver_full and pver_full.split("_")[0].isdigit():
-            pepoch, _, pver = pver_full.partition("_")
-        else:
-            pepoch, pver = "0", pver_full
-        current_packages[pname] = {
-            "filename": filename,
-            "version": pver,
-            "epoch": pepoch,
-            "release": prel,
-            "arch": arch,
-            "sha256": state["current"][filename]["sha256"],
-            "size": state["current"][filename]["size"],
-        }
-
+    current = current_packages(state)
     assets_by_name = {asset["name"]: asset for asset in state["assets"]}
     needed_files = []
-
     for name in pkgnames:
-        rec = current_packages.get(name)
+        rec = current.get(name)
         if not rec:
-            return False
+            return None
         if rec["version"] != version or rec["epoch"] != epoch:
-            return False
+            return None
         if parse_pkgrel(release) > parse_pkgrel(rec["release"]):
-            return False
-
+            return None
         fn = rec["filename"]
-        sig_fn = fn + ".sig"
-        if fn not in assets_by_name or sig_fn not in assets_by_name:
-            return False
+        if fn not in assets_by_name or fn + ".sig" not in assets_by_name:
+            return None
         needed_files.append((fn, rec["sha256"], rec["size"]))
+    return needed_files
 
+
+def fetch_published(needed_files, out_dir):
+    """Download live packages and signatures into out_dir; removes partial files and raises on failure."""
     repo = os.environ.get("GITHUB_REPOSITORY", "MainstreamOS/packages")
     base_url = f"https://github.com/{repo}/releases/download/{TAG}"
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-
     downloaded = []
     try:
         for fn, expected_sha, expected_size in needed_files:
@@ -331,11 +306,109 @@ def reuse_pkg(srcinfo_path, snapshot_path, out_dir, packages_list_path=None):
                 downloaded.append(dest_sig)
                 if not dest_sig.exists() or dest_sig.stat().st_size == 0:
                     raise ValueError(f"missing or empty signature for {fn}")
-        return True
     except Exception:
         for p in downloaded:
             p.unlink(missing_ok=True)
+        raise
+
+
+def reuse_pkg(srcinfo_path, snapshot_path, out_dir, packages_list_path=None):
+    state = read_json(snapshot_path)
+    if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
         return False
+
+    force_rebuild = os.environ.get("FORCE_REBUILD", "").strip().split()
+    if "all" in force_rebuild:
+        return False
+
+    fields = parse_srcinfo(srcinfo_path)
+    if "pkgver" not in fields or "pkgrel" not in fields or "pkgname" not in fields:
+        return False
+
+    pkgnames = fields["pkgname"]
+    if packages_list_path and Path(packages_list_path).is_file():
+        wanted = set()
+        for line in Path(packages_list_path).read_text().splitlines():
+            line = line.partition("#")[0].strip()
+            if line:
+                wanted.add(line.split("::")[0].strip())
+        target_pkgnames = [name for name in pkgnames if name in wanted]
+        if target_pkgnames:
+            pkgnames = target_pkgnames
+
+    for name in pkgnames:
+        if name in force_rebuild:
+            return False
+
+    needed_files = published_files(fields, state, pkgnames)
+    if needed_files is None:
+        return False
+    try:
+        fetch_published(needed_files, out_dir)
+    except Exception:
+        return False
+    return True
+
+
+def is_published(srcinfo_path, snapshot_path):
+    """Whether the kernel workflow can skip this recipe: every package it makes is live at its version."""
+    state = read_json(snapshot_path)
+    if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
+        raise ValueError("missing published asset inventory")
+    fields = parse_srcinfo(srcinfo_path)
+    force_rebuild = os.environ.get("FORCE_REBUILD", "").strip().split()
+    if "all" in force_rebuild or any(name in force_rebuild for name in fields["pkgname"]):
+        return False
+    return published_files(fields, state, fields["pkgname"]) is not None
+
+
+def keep_published(srcinfo_path, snapshot_path, out_dir):
+    """Copy the live build of each package a recipe makes, whatever its version, into out_dir.
+
+    The main build uses this for kernels, which only the kernel workflow builds: a recipe that is
+    newer than its published packages must not take them out of the database. Returns how many
+    packages were kept; a download failure raises."""
+    state = read_json(snapshot_path)
+    if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
+        raise ValueError("missing published asset inventory")
+    current = current_packages(state)
+    assets = {asset["name"] for asset in state["assets"]}
+    needed_files = []
+    for name in parse_srcinfo(srcinfo_path)["pkgname"]:
+        rec = current.get(name)
+        if not rec:
+            continue
+        if rec["filename"] not in assets or rec["filename"] + ".sig" not in assets:
+            raise ValueError(f"live package without its release asset: {rec['filename']}")
+        needed_files.append((rec["filename"], rec["sha256"], rec["size"]))
+    fetch_published(needed_files, out_dir)
+    for fn, _, _ in needed_files:
+        print(f"  kept {fn}")
+    return len(needed_files)
+
+
+def assemble(snapshot_path, out_dir):
+    """Fill out_dir with every live package that the packages already in it do not replace."""
+    state = read_json(snapshot_path)
+    if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
+        raise ValueError("missing published asset inventory")
+    if not state["current"]:
+        raise ValueError("no published database to add to")
+    replaced = {split["name"] for path in Path(out_dir).glob("*.pkg.tar.zst")
+                if (split := split_filename(path.name))}
+    if not replaced:
+        raise ValueError("no new packages to publish")
+    assets = {asset["name"] for asset in state["assets"]}
+    needed_files = []
+    for name, rec in sorted(current_packages(state).items()):
+        if name in replaced:
+            print(f"  replacing {rec['filename']}")
+            continue
+        if rec["filename"] not in assets or rec["filename"] + ".sig" not in assets:
+            raise ValueError(f"live package without its release asset: {rec['filename']}")
+        needed_files.append((rec["filename"], rec["sha256"], rec["size"]))
+    fetch_published(needed_files, out_dir)
+    print(f"  assembled {len(needed_files)} published packages around {len(replaced)} new ones")
 
 
 def validate_output(out):
@@ -435,6 +508,16 @@ def main():
     reuse.add_argument("snapshot", type=Path)
     reuse.add_argument("out", type=Path)
     reuse.add_argument("packages_list", type=Path, nargs="?", default=None)
+    check = commands.add_parser("is-published")
+    check.add_argument("srcinfo", type=Path)
+    check.add_argument("snapshot", type=Path)
+    keep = commands.add_parser("keep-published")
+    keep.add_argument("srcinfo", type=Path)
+    keep.add_argument("snapshot", type=Path)
+    keep.add_argument("out", type=Path)
+    gather = commands.add_parser("assemble")
+    gather.add_argument("snapshot", type=Path)
+    gather.add_argument("out", type=Path)
     publication = commands.add_parser("publish")
     publication.add_argument("out", type=Path)
     args = parser.parse_args()
@@ -443,6 +526,15 @@ def main():
     elif args.command == "reuse-pkg":
         if not reuse_pkg(args.srcinfo, args.snapshot, args.out, args.packages_list):
             sys.exit(1)
+    elif args.command == "is-published":
+        # 3 rather than 1, which also means the check itself failed.
+        if not is_published(args.srcinfo, args.snapshot):
+            sys.exit(3)
+    elif args.command == "keep-published":
+        if not keep_published(args.srcinfo, args.snapshot, args.out):
+            sys.exit(3)
+    elif args.command == "assemble":
+        assemble(args.snapshot, args.out)
     else:
         github = GitHub(os.environ.get("GITHUB_REPOSITORY", "MainstreamOS/packages"))
         if args.command == "snapshot":
