@@ -14,6 +14,7 @@ on:
     paths:
       - packages.list
       - build-repo.sh
+      - pkgbuilds/**
       - scripts/**
       - .github/workflows/build.yml
 
