@@ -84,7 +84,8 @@ for m in ${MODULES[*]}; do
 done
 ${BOOT_TEST_PRE:-}
 sleep 3
-if dmesg | grep -E 'Oops|BUG:|Kernel panic|WARNING:|cut here|Call Trace:|general protection fault|UBSAN:|KASAN:|refcount_t:|list_(add|del) corruption|soft lockup|hung_task|Unable to handle'; then
+# CPU vulnerability notices also say "WARNING:"; a real WARN() prints "cut here" and sets the W taint.
+if dmesg | grep -E 'Oops|BUG:|Kernel panic|WARNING: CPU:|WARNING: possible|WARNING: suspicious|cut here|Call Trace:|general protection fault|UBSAN:|KASAN:|refcount_t:|list_(add|del) corruption|soft lockup|hung_task|Unable to handle'; then
     echo "$MARK: the kernel log has the splat above"; result=FAILED
 fi
 taint=\$(cat /proc/sys/kernel/tainted)
