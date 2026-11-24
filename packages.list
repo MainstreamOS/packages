@@ -103,6 +103,8 @@ alsa-ucm-conf::local
 mainstream-tas2783-dkms::local
 ckbcomp
 python312
+linux-mainstream::kernel
+linux-mainstream-performance::kernel
 
 # ── Shell (heavy compile; dots installs this prebuilt, source build as fallback) ──
 mainstream-quickshell-git::dots
