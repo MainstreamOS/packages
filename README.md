@@ -21,6 +21,7 @@ under a fixed tag, giving pacman a stable `Server` URL.
 | `.github/workflows/build.yml` | CI: build → sign → publish to the `mainstream-repo` Release. |
 | `keys/mainstream.pub` | Public half of the repository signing key (committed; clients import it). |
 | `keys/upstream/*.asc` | Pinned upstream PGP public keys for recipes that declare `validpgpkeys`. |
+| `keys/secure-boot/` | Mainstream's Secure Boot certificate authority, public half only (PEM and DER). `scripts/make-secure-boot-ca.sh` creates an authority and a signing certificate; the private keys never enter this repository. |
 
 ## How clients consume it
 
