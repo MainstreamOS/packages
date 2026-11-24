@@ -21,7 +21,7 @@ optdepends=('steam: runs Windows games with Steam Play')
 options=('!strip' '!debug' 'emptydirs')
 _relname="${pkgname}-${pkgver}"
 source=("${_relname}.tar.gz::${_release_url}/${_relname}/${_relname}.tar.gz")
-sha512sums=('00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
+sha512sums=('09199ec2ef10704d0ade9cc5362c3b9c173ac382b570eba9b9caf6d003ad2a9332eea818a4b3032700a4bf91ebbe0e29634979902036e438056b9d8a1b025ade')
 
 prepare() {
   local _tree="${srcdir}/${_relname}"

@@ -67,6 +67,7 @@ mainstream-hyprland::dots
 mainstream-python::dots
 mainstream-screencapture::dots
 mainstream-toolkit::dots
+proton-mainstream::local
 
 # ── VR (desktop and app access inside a headset, plus wireless streaming) ──
 wayvr
