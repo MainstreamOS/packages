@@ -1,0 +1,31 @@
+name: Watch the kernel fork token
+
+# kernel-update.yml pushes to MainstreamOS/linux with KERNEL_FORK_TOKEN, a fine-grained
+# token that expires. An issue opens 36 days before that (day 330 of a 366-day token).
+on:
+  schedule:
+    - cron: "17 8 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: kernel-token-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    # The token is a secret of this environment; a required reviewer there would hold this check too.
+    environment: kernel-publish
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Report a fork token that expires soon
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_TOKEN: ${{ secrets.KERNEL_FORK_TOKEN }}
+        run: python3 scripts/watch-token.py
