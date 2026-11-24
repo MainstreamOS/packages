@@ -1,0 +1,59 @@
+name: Kernel build runner
+description: >-
+  Free the runner's disk, pick the build disk and start the Arch container a kernel is built and
+  boot-tested in (named "arch", workspace mounted at the same path, build disk at /build).
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      shell: bash
+      run: |
+        df -h / /mnt || true
+        sudo swapoff -a || true
+        sudo rm -rf /mnt/swapfile /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+          /opt/hostedtoolcache /usr/share/swift /usr/local/share/boost /usr/local/share/powershell \
+          /usr/local/share/chromium /usr/local/lib/node_modules /usr/share/miniconda /opt/microsoft
+        docker image prune -af >/dev/null
+        df -h / /mnt || true
+
+    - name: Pick the build disk
+      # A kernel tree with its packaging is about 30 GB, plus the container's toolchain on /.
+      shell: bash
+      run: |
+        free_gib() { df -BG --output=avail "$1" 2>/dev/null | tail -1 | tr -dc 0-9; }
+        root=$(free_gib /); mnt=$(free_gib /mnt); mnt=${mnt:-0}
+        if [ "$mnt" -gt "$root" ]; then dir=/mnt/kernel-build; have=$mnt; else dir=/kernel-build; have=$((root - 6)); fi
+        echo "free: / ${root}G, /mnt ${mnt}G; building in $dir with ${have}G"
+        if [ "$have" -lt 32 ]; then
+          echo "::error title=Not enough disk::a kernel build needs 32G free, the runner has ${have}G"
+          exit 1
+        fi
+        sudo mkdir -p "$dir"
+        echo "BUILD_ROOT=$dir" >> "$GITHUB_ENV"
+
+    - name: Start the Arch container
+      shell: bash
+      run: |
+        kvm=()
+        # The boot test uses KVM when the runner offers it, and QEMU's emulation otherwise.
+        if [ -e /dev/kvm ] && sudo chmod 666 /dev/kvm; then kvm=(--device /dev/kvm); fi
+        echo "KVM: ${kvm[*]:-not available}"
+        docker run -d --name arch "${kvm[@]}" \
+          -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$BUILD_ROOT:/build" -w "$GITHUB_WORKSPACE" \
+          archlinux:base-devel sleep infinity
+        docker exec arch bash -c '
+          set -e
+          pacman -Syu --noconfirm git gnupg github-cli python qemu-system-x86 cpio
+          cat > /etc/makepkg.conf.d/retry-downloads.conf <<"DLEOF"
+        DLAGENTS=("file::/usr/bin/curl -qgC - -o %o %u"
+                  "ftp::/usr/bin/curl -qgfC - --ftp-pasv --retry 3 --retry-delay 3 -o %o %u"
+                  "http::/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3 --retry-all-errors -o %o %u"
+                  "https::/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3 --retry-all-errors -o %o %u"
+                  "rsync::/usr/bin/rsync --no-motd -z %u %o"
+                  "scp::/usr/bin/scp -C %u %o")
+        DLEOF
+          useradd -m builder
+          printf "builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n" > /etc/sudoers.d/builder
+          chmod 440 /etc/sudoers.d/builder
+          chown -R builder:builder "$PWD" /build'
