@@ -59,6 +59,14 @@ mainstream-gaming::dots
 mainstream-basic::dots
 mainstream-system::dots
 mainstream-extras::dots
+mainstream-audio::dots
+mainstream-backlight::dots
+mainstream-bibata-modern-classic-bin::dots
+mainstream-gnome::dots
+mainstream-hyprland::dots
+mainstream-python::dots
+mainstream-screencapture::dots
+mainstream-toolkit::dots
 
 # ── VR (desktop and app access inside a headset, plus wireless streaming) ──
 wayvr
