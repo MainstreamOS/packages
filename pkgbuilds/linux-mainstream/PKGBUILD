@@ -1,0 +1,394 @@
+# Maintainer: mainstreamos <https://github.com/MainstreamOS>
+
+: "${_srcurl:=https://github.com/MainstreamOS/linux/archive/refs/tags}"
+: "${_extra_drivers:=yes}"
+: "${_cpusched:=eevdf}"
+: "${_use_llvm_lto:=none}"
+: "${_cc_harder:=no}"
+: "${_processor_opt:=}"
+: "${_HZ_ticks:=}"
+: "${_tickrate:=}"
+: "${_preempt:=}"
+: "${_hugepage:=}"
+: "${_eac:=no}"
+: "${_eac_sbsign_key:=}"
+: "${_eac_sbsign_cert:=}"
+
+pkgbase=linux-mainstream
+pkgver=7.3.5.arch1
+pkgrel=1
+pkgdesc='Mainstream OS'
+_archpkg=7.3.5.arch1-1
+_tag=mainstream-default-7.3.5.arch1-1
+_tag_sha256=dfb944d4edb5a5a2184b8757609e742ff14950a07d3bdab31b01d50624cdca26
+_srcname=linux-$_tag
+url='https://github.com/MainstreamOS/linux'
+arch=(x86_64)
+license=(GPL-2.0-only)
+makedepends=(
+  bc
+  binutils
+  cpio
+  gettext
+  glibc
+  libelf
+  libgcc
+  openssl
+  pahole
+  perl
+  python
+  rust
+  rust-bindgen
+  rust-src
+  tar
+  xxhash
+  xz
+  zlib
+  zstd
+)
+options=(
+  !debug
+  !strip
+  !lto
+)
+source=(
+  "$_srcname.tar.gz::$_srcurl/$_tag.tar.gz"
+  config
+)
+sha256sums=("$_tag_sha256"
+            '75366b057ddfafeb2c02a902aebdcbeb36ddcd56de74c82b1eadf4fac308555a')
+BUILD_FLAGS=()
+
+_die() { error "$@"; exit 1; }
+
+if [ "$_use_llvm_lto" != none ]; then
+  makedepends+=(clang lld llvm)
+  BUILD_FLAGS=(CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1)
+fi
+
+_eac_sbsign_args=()
+if [ -n "$_eac_sbsign_key" ] && [ -n "$_eac_sbsign_cert" ]; then
+  [ -e "$_eac_sbsign_cert" ] || _die "Failed to find file $_eac_sbsign_cert"
+  _eac_sbsign_cert="$(realpath "$_eac_sbsign_cert")"
+  if [[ $_eac_sbsign_key = pkcs11:* ]]; then
+    _eac_sbsign_args=(--provider default --provider pkcs11prov)
+    makedepends+=(libp11)
+  else
+    [ -e "$_eac_sbsign_key" ] || _die "Failed to find file $_eac_sbsign_key"
+    _eac_sbsign_key="$(realpath "$_eac_sbsign_key")"
+  fi
+  makedepends+=(sbsigntools)
+fi
+
+export KBUILD_BUILD_HOST=mainstreamos
+export KBUILD_BUILD_USER=$pkgbase
+export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+export LOCALVERSION=
+
+_expect() {
+  [[ $(scripts/config -s "$1") = "$2" ]] || _die "CONFIG_$1 is not $2"
+}
+
+prepare() {
+  if [ "$_eac" = yes ] && { [ -z "$_eac_sbsign_key" ] || [ -z "$_eac_sbsign_cert" ]; }; then
+    _die "_eac_sbsign_key and _eac_sbsign_cert have to be set, an unsigned kernel does not pass the Easy Anti-Cheat checks"
+  fi
+
+  cd $_srcname
+
+  echo "Setting version..."
+  echo "-$pkgrel" > localversion.10-pkgrel
+  echo "${pkgbase#linux}" > localversion.20-pkgname
+
+  [[ $_archpkg = "$pkgver"-* ]] || _die "_archpkg $_archpkg is not a build of $pkgver"
+  [[ $(make -s kernelversion) = "${pkgver/.arch/-arch}" ]] || _die "$_tag is $(make -s kernelversion), not $pkgver"
+
+  echo "Setting config..."
+  cp ../config .config
+  scripts/config -d LOCALVERSION_AUTO
+  scripts/config -e AMD_PRIVATE_COLOR
+
+  case "$_processor_opt" in
+    '') ;;
+    GENERIC_V[1-4]) scripts/config -e GENERIC_CPU -d MZEN4 -d X86_NATIVE_CPU --set-val X86_64_VERSION "${_processor_opt#GENERIC_V}" ;;
+    *) _die "The value '$_processor_opt' for _processor_opt is invalid" ;;
+  esac
+
+  if [ "$_extra_drivers" = yes ]; then
+    scripts/config -m V4L2_LOOPBACK -m VHBA
+  fi
+
+  case "$_cpusched" in
+    eevdf) ;;
+    bore) scripts/config -e SCHED_BORE ;;
+    *) _die "The value '$_cpusched' for _cpusched is invalid" ;;
+  esac
+
+  case "$_use_llvm_lto" in
+    none) ;;
+    thin) scripts/config -d LTO_NONE -e LTO_CLANG_THIN ;;
+    full) scripts/config -d LTO_NONE -e LTO_CLANG_FULL ;;
+    *) _die "The value '$_use_llvm_lto' for _use_llvm_lto is invalid" ;;
+  esac
+
+  case "$_HZ_ticks" in
+    '') ;;
+    100|250|500|600|750|1000) scripts/config -d HZ_300 -d HZ_1000 -e "HZ_$_HZ_ticks" --set-val HZ "$_HZ_ticks" ;;
+    300) scripts/config -d HZ_1000 -e HZ_300 --set-val HZ 300 ;;
+    *) _die "The value '$_HZ_ticks' for _HZ_ticks is invalid" ;;
+  esac
+
+  case "$_tickrate" in
+    '') ;;
+    idle) scripts/config -d HZ_PERIODIC -d NO_HZ_FULL -e NO_HZ_IDLE -e NO_HZ -e NO_HZ_COMMON ;;
+    full) scripts/config -d HZ_PERIODIC -d NO_HZ_IDLE -d CONTEXT_TRACKING_FORCE -e NO_HZ_FULL_NODEF -e NO_HZ_FULL -e NO_HZ -e NO_HZ_COMMON -e CONTEXT_TRACKING ;;
+    *) _die "The value '$_tickrate' for _tickrate is invalid" ;;
+  esac
+
+  case "$_preempt" in
+    '') ;;
+    full) scripts/config -e PREEMPT -d PREEMPT_LAZY ;;
+    lazy) scripts/config -d PREEMPT -e PREEMPT_LAZY ;;
+    *) _die "The value '$_preempt' for _preempt is invalid" ;;
+  esac
+
+  case "$_hugepage" in
+    '') ;;
+    always) scripts/config -d TRANSPARENT_HUGEPAGE_MADVISE -e TRANSPARENT_HUGEPAGE_ALWAYS ;;
+    madvise) scripts/config -d TRANSPARENT_HUGEPAGE_ALWAYS -e TRANSPARENT_HUGEPAGE_MADVISE ;;
+    *) _die "The value '$_hugepage' for _hugepage is invalid" ;;
+  esac
+
+  if [ "$_cc_harder" = yes ]; then
+    scripts/config -d CC_OPTIMIZE_FOR_PERFORMANCE -e CC_OPTIMIZE_FOR_PERFORMANCE_O3
+  fi
+
+  if [ "$_eac" = yes ]; then
+    echo "Applying Easy Anti-Cheat Linux v2 configuration..."
+    scripts/config -e SECURITY_LOCKDOWN_LSM \
+      -e SECURITY_LOCKDOWN_LSM_EARLY \
+      -d LOCK_DOWN_KERNEL_FORCE_NONE \
+      -e LOCK_DOWN_KERNEL_FORCE_INTEGRITY \
+      -d LOCK_DOWN_KERNEL_FORCE_CONFIDENTIALITY \
+      -e BPF_LSM \
+      -e MODULE_SIG -e MODULE_SIG_ALL -e MODULE_SIG_FORCE \
+      -d INTEGRITY_MACHINE_KEYRING \
+      -e SECONDARY_TRUSTED_KEYRING_SIGNED_BY_BUILTIN \
+      -d HIBERNATION \
+      -d ACPI_TABLE_UPGRADE \
+      -e INTEL_IOMMU_DEFAULT_ON \
+      -d IOMMU_DEFAULT_PASSTHROUGH
+    printf '%s\n' \
+      'sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md' \
+      "linux,1,The Linux Developers,linux,${pkgver%%.arch*},https://www.kernel.org" \
+      "linux.mainstream,1,Mainstream OS,$pkgbase,$pkgver-$pkgrel,https://mainstreamos.org" \
+      > sbat.csv
+    scripts/config --set-str EFI_SBAT_FILE sbat.csv
+  fi
+
+  make "${BUILD_FLAGS[@]}" olddefconfig
+  diff -u ../config .config || :
+
+  if [ "$_extra_drivers" = yes ]; then
+    _expect V4L2_LOOPBACK m
+    _expect VHBA m
+  fi
+  [ "$_cpusched" != bore ] || _expect SCHED_BORE y
+  [ "$_use_llvm_lto" != thin ] || _expect LTO_CLANG_THIN y
+  [ "$_use_llvm_lto" != full ] || _expect LTO_CLANG_FULL y
+  [ "$_cc_harder" != yes ] || _expect CC_OPTIMIZE_FOR_PERFORMANCE_O3 y
+  [ -z "$_processor_opt" ] || _expect X86_64_VERSION "${_processor_opt#GENERIC_V}"
+  [ -z "$_HZ_ticks" ] || _expect HZ "$_HZ_ticks"
+  if [ "$_use_llvm_lto" = none ]; then
+    _expect CC_IS_GCC y
+  else
+    _expect CC_IS_CLANG y
+  fi
+  [ -n "$_processor_opt" ] || [[ $(scripts/config -s X86_NATIVE_CPU) != y ]] || _die "CONFIG_X86_NATIVE_CPU is enabled"
+  _expect ACPI_BATTERY_HOOKS y
+  _expect AMD_PRIVATE_COLOR y
+  _expect DEBUG_INFO_BTF y
+  _expect MODULE_SIG_ALL y
+  if [ "$_eac" = yes ]; then
+    local opt
+    for opt in LOCK_DOWN_KERNEL_FORCE_INTEGRITY SECURITY_LOCKDOWN_LSM_EARLY BPF_LSM \
+               MODULE_SIG_FORCE INTEL_IOMMU_DEFAULT_ON EFI_SBAT; do
+      _expect $opt y
+    done
+    for opt in HIBERNATION IOMMU_DEFAULT_PASSTHROUGH INTEGRITY_MACHINE_KEYRING ACPI_TABLE_UPGRADE; do
+      [[ $(scripts/config -s $opt) != y ]] || _die "CONFIG_$opt is still enabled"
+    done
+    grep -q '^CONFIG_LSM=".*bpf' .config || _die "CONFIG_LSM does not contain bpf"
+  fi
+
+  make "${BUILD_FLAGS[@]}" -s kernelrelease > version
+  echo "Prepared $pkgbase version $(<version)"
+}
+
+build() {
+  cd $_srcname
+  make "${BUILD_FLAGS[@]}" all
+  make -C tools/bpf/bpftool vmlinux.h feature-clang-bpf-co-re=1
+}
+
+_package() {
+  pkgdesc="The $pkgdesc kernel and modules"
+  depends=(
+    coreutils
+    initramfs
+    kmod
+  )
+  optdepends=(
+    "$pkgbase-headers: headers and scripts for building modules"
+    'linux-firmware: firmware images needed for some devices'
+    'scx-scheds: to use sched-ext schedulers'
+    'wireless-regdb: to set the correct wireless channels of your country'
+  )
+  provides=(
+    KSMBD-MODULE
+    NTSYNC-MODULE
+    VIRTUALBOX-GUEST-MODULES
+    WIREGUARD-MODULE
+  )
+  if [ "$_extra_drivers" = yes ]; then
+    provides+=(
+      V4L2LOOPBACK-MODULE
+      VHBA-MODULE
+    )
+  fi
+
+  cd $_srcname
+  local modulesdir="$pkgdir/usr/lib/modules/$(<version)"
+
+  if [ -n "$_eac_sbsign_key" ] && [ -n "$_eac_sbsign_cert" ]; then
+    echo "Signing boot image..."
+    install -dm755 "$modulesdir"
+    sbsign "${_eac_sbsign_args[@]}" --key "$_eac_sbsign_key" --cert "$_eac_sbsign_cert" \
+      --output "$modulesdir/vmlinuz" "$(make -s image_name)"
+    chmod 644 "$modulesdir/vmlinuz"
+  else
+    [ "$_eac" != yes ] || _die "The kernel image is not signed, it does not pass the Easy Anti-Cheat checks"
+    echo "Installing boot image..."
+    install -Dm644 "$(make -s image_name)" "$modulesdir/vmlinuz"
+  fi
+
+  echo "$pkgbase" | install -Dm644 /dev/stdin "$modulesdir/pkgbase"
+
+  echo "Installing modules..."
+  ZSTD_CLEVEL=19 make "${BUILD_FLAGS[@]}" INSTALL_MOD_PATH="$pkgdir/usr" INSTALL_MOD_STRIP=1 \
+    DEPMOD=/doesnt/exist modules_install
+
+  rm "$modulesdir"/build
+}
+
+_package-headers() {
+  pkgdesc="Headers and scripts for building modules for the $pkgdesc kernel"
+  depends=(
+    binutils
+    glibc
+    libelf
+    libgcc
+    openssl
+    pahole
+    xxhash
+    zlib
+    zstd
+  )
+  provides=(LINUX-HEADERS)
+  if [ "$_use_llvm_lto" != none ]; then
+    depends+=(clang lld llvm)
+  fi
+
+  cd $_srcname
+  local builddir="$pkgdir/usr/lib/modules/$(<version)/build"
+
+  echo "Installing build files..."
+  install -Dt "$builddir" -m644 .config Makefile Module.symvers System.map \
+    localversion.* version vmlinux tools/bpf/bpftool/vmlinux.h
+  install -Dt "$builddir/kernel" -m644 kernel/Makefile
+  install -Dt "$builddir/arch/x86" -m644 arch/x86/Makefile
+  cp -t "$builddir" -a scripts
+  ln -srt "$builddir" "$builddir/scripts/gdb/vmlinux-gdb.py"
+
+  if [[ $(scripts/config -s CONFIG_HAVE_STACK_VALIDATION) = y ]]; then
+    install -Dt "$builddir/tools/objtool" tools/objtool/objtool
+  fi
+
+  if [[ $(scripts/config -s CONFIG_DEBUG_INFO_BTF_MODULES) = y ]]; then
+    install -Dt "$builddir/tools/bpf/resolve_btfids" tools/bpf/resolve_btfids/resolve_btfids
+  fi
+
+  echo "Installing headers..."
+  cp -t "$builddir" -a include
+  cp -t "$builddir/arch/x86" -a arch/x86/include
+  install -Dt "$builddir/arch/x86/kernel" -m644 arch/x86/kernel/asm-offsets.s
+
+  install -Dt "$builddir/drivers/md" -m644 drivers/md/*.h
+  install -Dt "$builddir/net/mac80211" -m644 net/mac80211/*.h
+  install -Dt "$builddir/drivers/media/i2c" -m644 drivers/media/i2c/msp3400-driver.h
+  install -Dt "$builddir/drivers/media/usb/dvb-usb" -m644 drivers/media/usb/dvb-usb/*.h
+  install -Dt "$builddir/drivers/media/dvb-frontends" -m644 drivers/media/dvb-frontends/*.h
+  install -Dt "$builddir/drivers/media/tuners" -m644 drivers/media/tuners/*.h
+  install -Dt "$builddir/drivers/iio/common/hid-sensors" -m644 drivers/iio/common/hid-sensors/*.h
+
+  echo "Installing KConfig files..."
+  find . -name 'Kconfig*' -exec install -Dm644 {} "$builddir/{}" \;
+
+  if [[ $(scripts/config -s CONFIG_RUST) = y ]]; then
+    echo "Installing Rust files..."
+    install -Dt "$builddir/rust" -m644 rust/*.rmeta
+    install -Dt "$builddir/rust" rust/*.so
+  fi
+
+  echo "Installing unstripped VDSO..."
+  make "${BUILD_FLAGS[@]}" INSTALL_MOD_PATH="$pkgdir/usr" vdso_install link=
+
+  echo "Removing unneeded architectures..."
+  local arch
+  for arch in "$builddir"/arch/*/; do
+    [[ $arch = */x86/ ]] && continue
+    rm -r "$arch"
+  done
+
+  echo "Removing documentation..."
+  rm -r "$builddir/Documentation"
+
+  echo "Removing broken symlinks..."
+  find -L "$builddir" -type l -delete
+
+  echo "Removing loose objects..."
+  find "$builddir" -type f -name '*.o' -delete
+
+  echo "Stripping build tools..."
+  local file
+  while read -rd '' file; do
+    case "$(file -Sib "$file")" in
+      application/x-sharedlib\;*)
+        strip -v $STRIP_SHARED "$file" ;;
+      application/x-archive\;*)
+        strip -v $STRIP_STATIC "$file" ;;
+      application/x-executable\;*)
+        strip -v $STRIP_BINARIES "$file" ;;
+      application/x-pie-executable\;*)
+        strip -v $STRIP_SHARED "$file" ;;
+    esac
+  done < <(find "$builddir" -type f -perm -u+x ! -name vmlinux -print0)
+
+  echo "Stripping vmlinux..."
+  strip -v $STRIP_STATIC "$builddir/vmlinux"
+
+  echo "Adding symlink..."
+  mkdir -p "$pkgdir/usr/src"
+  ln -sr "$builddir" "$pkgdir/usr/src/$pkgbase"
+}
+
+pkgname=(
+  "$pkgbase"
+  "$pkgbase-headers"
+)
+for _p in "${pkgname[@]}"; do
+  eval "package_$_p() {
+    $(declare -f "_package${_p#$pkgbase}")
+    _package${_p#$pkgbase}
+  }"
+done
