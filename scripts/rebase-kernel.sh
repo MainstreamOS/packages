@@ -284,7 +284,8 @@ g bundle create -q "$OUT/fork.bundle" "${refs[@]}" --not "refs/tags/$old_default
     echo "DEFAULT_BRANCH=$new_default_branch"
     echo "PERF_BRANCH=$new_perf_branch"
     echo "NEW_BASE=$new_base"
-    echo "REUSED=${reused[*]}"
+    # A list, quoted: the readers source this file.
+    printf 'REUSED=%q\n' "${reused[*]}"
 } > "$OUT/rebase.env"
 echo "rebased onto $new_base: $default_tag, $perf_tag"
 cat "$report"
