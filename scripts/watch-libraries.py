@@ -109,8 +109,8 @@ def watch(repository, databases=None, dry_run=False):
     print("Rebuild required:")
     for name, pins in sorted(stale.items()):
         print(f"  - {name} needs {', '.join(pins)}")
-    for repository, name, entry in sorted(providers):
-        print(f"  Arch [{repository}] {name} provides {entry}")
+    for arch_repository, name, entry in sorted(providers):
+        print(f"  Arch [{arch_repository}] {name} provides {entry}")
     # A rebuild picks up a library's new version. It cannot bring back one Arch dropped.
     gone = sorted({PIN.fullmatch(pin)[1] for pins in stale.values() for pin in pins} - shipped)
     if gone:
