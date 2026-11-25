@@ -294,7 +294,7 @@ _package-headers() {
     zlib
     zstd
   )
-  provides=(LINUX-HEADERS)
+  provides=(LINUX-HEADERS linux-headers)
   if [ "$_use_llvm_lto" != none ]; then
     depends+=(clang lld llvm)
   fi
