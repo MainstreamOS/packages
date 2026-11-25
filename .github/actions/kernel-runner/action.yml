@@ -42,7 +42,8 @@ runs:
         docker run -d --name arch "${kvm[@]}" \
           -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$BUILD_ROOT:/build" -w "$GITHUB_WORKSPACE" \
           archlinux:base-devel sleep infinity
-        docker exec arch bash -c '
+        # builder gets the runner's uid, so the steps outside the container can still write the workspace.
+        docker exec -e RUNNER_UID="$(id -u)" arch bash -c '
           set -e
           pacman -Syu --noconfirm git gnupg github-cli python qemu-system-x86 cpio
           cat > /etc/makepkg.conf.d/retry-downloads.conf <<"DLEOF"
@@ -53,7 +54,7 @@ runs:
                   "rsync::/usr/bin/rsync --no-motd -z %u %o"
                   "scp::/usr/bin/scp -C %u %o")
         DLEOF
-          useradd -m builder
+          useradd -m -u "$RUNNER_UID" builder
           printf "builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n" > /etc/sudoers.d/builder
           chmod 440 /etc/sudoers.d/builder
-          chown -R builder:builder "$PWD" /build'
+          chown -R builder:builder /build'
