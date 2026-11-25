@@ -15,12 +15,12 @@
 : "${_eac_sbsign_cert:=}"
 
 pkgbase=linux-mainstream
-pkgver=7.3.5.arch1
+pkgver=7.3.6.arch1
 pkgrel=1
 pkgdesc='Mainstream OS'
-_archpkg=7.3.5.arch1-1
-_tag=mainstream-default-7.3.5.arch1-1
-_tag_sha256=dfb944d4edb5a5a2184b8757609e742ff14950a07d3bdab31b01d50624cdca26
+_archpkg=7.3.6.arch1-1
+_tag=mainstream-default-7.3.6.arch1-1
+_tag_sha256=3d177e70cb083625cfd4803452be5a95ccf0683f066f57908bd34a8997ebc8f3
 _srcname=linux-$_tag
 url='https://github.com/MainstreamOS/linux'
 arch=(x86_64)
@@ -56,7 +56,7 @@ source=(
   config
 )
 sha256sums=("$_tag_sha256"
-            '75366b057ddfafeb2c02a902aebdcbeb36ddcd56de74c82b1eadf4fac308555a')
+            '4f1c75c66623f09b80c4adcafd998377fea51ae962c26e0a30656e3edd873069')
 BUILD_FLAGS=()
 
 _die() { error "$@"; exit 1; }
