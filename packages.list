@@ -98,6 +98,8 @@ limine-mkinitcpio-hook
 limine-snapper-sync
 
 # ── System / build deps ──
+t2fanrd::local
+apple-t2-audio-config::local
 # Drop the TAS2783 backport once the official package ships the speaker fixes.
 alsa-ucm-conf::local
 mainstream-tas2783-dkms::local

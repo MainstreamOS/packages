@@ -1,0 +1,35 @@
+pkgname=t2fanrd
+pkgver=r21.01df44d
+pkgrel=1
+_commit=01df44d1bcd555647e932c06086c411c984d197d
+pkgdesc='Fan control daemon for Macs with the Apple T2 chip'
+arch=('x86_64')
+url='https://github.com/sharpenedblade/T2FanRD'
+license=('GPL-3.0-or-later')
+depends=('glibc' 'libgcc')
+makedepends=('cargo' 'git')
+conflicts=('t2fand')
+replaces=('t2fand')
+options=('!debug' '!lto')
+source=("$pkgname::git+$url.git#commit=$_commit" 't2fanrd.service')
+sha256sums=('1a488f6fe6070e047847ec07773f27776aed0ce4757f74516d51b7a2d02008b6'
+            '4d63a9c04f57d933875acf809b99fbd048970af8dcd5b17260624f7b414f7e03')
+
+prepare() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+package() {
+    install -Dm0755 "$pkgname/target/release/t2fanrd" "$pkgdir/usr/bin/t2fanrd"
+    install -Dm0644 t2fanrd.service "$pkgdir/usr/lib/systemd/system/t2fanrd.service"
+    install -Dm0644 "$pkgname/LICENCE" "$pkgdir/usr/share/licenses/$pkgname/LICENCE"
+}
