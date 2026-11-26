@@ -16,11 +16,11 @@
 
 pkgbase=linux-mainstream
 pkgver=7.3.6.arch1
-pkgrel=1
+pkgrel=2
 pkgdesc='Mainstream OS'
 _archpkg=7.3.6.arch1-1
-_tag=mainstream-default-7.3.6.arch1-1
-_tag_sha256=3d177e70cb083625cfd4803452be5a95ccf0683f066f57908bd34a8997ebc8f3
+_tag=mainstream-default-7.3.6.arch1-2
+_tag_sha256=e6b990f9ddc3215205a9fb6512c8014232be7dc7cc12f8021b04dc2c0ca55c37
 _srcname=linux-$_tag
 url='https://github.com/MainstreamOS/linux'
 arch=(x86_64)
@@ -107,6 +107,9 @@ prepare() {
   cp ../config .config
   scripts/config -d LOCALVERSION_AUTO
   scripts/config -e AMD_PRIVATE_COLOR
+  scripts/config -m T2BCE_CORE -m T2BCE_DMA -m T2BCE_VHCI -m T2BCE_AUDIO -m T2BCE_AVE \
+    -m MFD_MACSMC_CORE -m MACSMC_ACPI -m MACSMC_POWER -m SENSORS_MACSMC_HWMON -m RTC_DRV_MACSMC \
+    -m LEDS_MACSMC -m MACSMC_LIGHT -m MACSMC_ACCEL -m MACSMC_WDT
 
   case "$_processor_opt" in
     '') ;;
@@ -188,6 +191,11 @@ prepare() {
 
   make "${BUILD_FLAGS[@]}" olddefconfig
   diff -u ../config .config || :
+
+  _expect T2BCE_CORE m
+  _expect T2BCE_VHCI m
+  _expect MACSMC_ACPI m
+  _expect MACSMC_POWER m
 
   if [ "$_extra_drivers" = yes ]; then
     _expect V4L2_LOOPBACK m
