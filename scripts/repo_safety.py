@@ -190,6 +190,31 @@ def parse_srcinfo(srcinfo):
     return fields
 
 
+def bare_name(depend):
+    return re.sub(r"[<>=].*", "", depend)
+
+
+def package_replaces(srcinfo):
+    """The names each package of a recipe replaces: its own section's, or else the pkgbase's."""
+    base, sections, section = [], {}, None
+    for line in Path(srcinfo).read_text().splitlines():
+        key, sep, value = line.strip().partition(" = ")
+        if not sep:
+            continue
+        if key == "pkgname":
+            section = sections.setdefault(value, [])
+        elif key == "replaces":
+            (base if section is None else section).append(bare_name(value))
+    return {name: names or base for name, names in sections.items()}
+
+
+def built_replaces(path):
+    """The names a built package replaces, from its .PKGINFO."""
+    info = run("bsdtar", "-xOf", str(path), ".PKGINFO", capture_output=True, text=True).stdout
+    return {bare_name(line.removeprefix("replaces = ")) for line in info.splitlines()
+            if line.startswith("replaces = ")}
+
+
 def parse_pkgrel(value):
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
         raise ValueError(f"unsupported pkgrel: {value}")
@@ -366,21 +391,24 @@ def keep_published(srcinfo_path, snapshot_path, out_dir):
     """Copy the live build of each package a recipe makes, whatever its version, into out_dir.
 
     The main build uses this for kernels, which only the kernel workflow builds: a recipe that is
-    newer than its published packages must not take them out of the database. Returns how many
-    packages were kept; a download failure raises."""
+    newer than its published packages must not take them out of the database. A package that is not
+    live yet keeps the live packages it replaces, so a renamed kernel stays installable until the
+    kernel workflow publishes it. Returns how many packages were kept; a download failure raises."""
     state = read_json(snapshot_path)
     if not isinstance(state.get("assets"), list) or not isinstance(state.get("current"), dict):
         raise ValueError("missing published asset inventory")
     current = current_packages(state)
     assets = {asset["name"] for asset in state["assets"]}
+    replaces = package_replaces(srcinfo_path)
     needed_files = []
     for name in parse_srcinfo(srcinfo_path)["pkgname"]:
-        rec = current.get(name)
-        if not rec:
-            continue
-        if rec["filename"] not in assets or rec["filename"] + ".sig" not in assets:
-            raise ValueError(f"live package without its release asset: {rec['filename']}")
-        needed_files.append((rec["filename"], rec["sha256"], rec["size"]))
+        for kept in ([name] if name in current else replaces.get(name, [])):
+            rec = current.get(kept)
+            if not rec:
+                continue
+            if rec["filename"] not in assets or rec["filename"] + ".sig" not in assets:
+                raise ValueError(f"live package without its release asset: {rec['filename']}")
+            needed_files.append((rec["filename"], rec["sha256"], rec["size"]))
     fetch_published(needed_files, out_dir)
     for fn, _, _ in needed_files:
         print(f"  kept {fn}")
@@ -394,10 +422,12 @@ def assemble(snapshot_path, out_dir):
         raise ValueError("missing published asset inventory")
     if not state["current"]:
         raise ValueError("no published database to add to")
-    replaced = {split["name"] for path in Path(out_dir).glob("*.pkg.tar.zst")
-                if (split := split_filename(path.name))}
-    if not replaced:
+    built = {path: split["name"] for path in Path(out_dir).glob("*.pkg.tar.zst")
+             if (split := split_filename(path.name))}
+    if not built:
         raise ValueError("no new packages to publish")
+    # A live package a new one replaces goes too; left in, it could still be installed in place of its replacement.
+    replaced = set(built.values()).union(*map(built_replaces, built))
     assets = {asset["name"] for asset in state["assets"]}
     needed_files = []
     for name, rec in sorted(current_packages(state).items()):
@@ -408,7 +438,7 @@ def assemble(snapshot_path, out_dir):
             raise ValueError(f"live package without its release asset: {rec['filename']}")
         needed_files.append((rec["filename"], rec["sha256"], rec["size"]))
     fetch_published(needed_files, out_dir)
-    print(f"  assembled {len(needed_files)} published packages around {len(replaced)} new ones")
+    print(f"  assembled {len(needed_files)} published packages around {len(built)} new ones")
 
 
 def validate_output(out):

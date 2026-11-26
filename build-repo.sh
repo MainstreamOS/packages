@@ -115,7 +115,7 @@ sign=(); [ -n "${GPGKEY:-}" ] && sign=(--sign --key "$GPGKEY")
 # (xrizer and its lib32 and common halves) goes through makepkg once: one run
 # already leaves every package it produces in out/.
 declare -A base_done=()
-# Every package a ::kernel recipe makes, headers included, so the unlisted-package sweep keeps them.
+# Every package a ::kernel recipe makes or replaces, headers included, so the unlisted-package sweep keeps them.
 kernel_pkgs=()
 
 # Import pinned upstream PGP keys so makepkg verifies source signatures without
@@ -336,7 +336,9 @@ for entry in "${entries[@]}"; do
             echo "!! unreadable kernel recipe: pkgbuilds/$name"; failed=$((failed+1)); failures+=("$name(kernel)"); continue
         fi
         mapfile -t kpkgs < <(sed -nE 's/^pkgname = //p' "$dir/.SRCINFO")
-        kernel_pkgs+=("${kpkgs[@]}")
+        # A renamed kernel's old packages stay live until kernels.yml publishes the new ones.
+        mapfile -t kold < <(sed -nE 's/^[[:space:]]*replaces = ([^<>=]+).*/\1/p' "$dir/.SRCINFO" | sort -u)
+        kernel_pkgs+=("${kpkgs[@]}" "${kold[@]}")
         if [ -z "${PUBLISHED_ASSETS:-}" ]; then
             echo "  no published snapshot: $name is left out of this repo"; continue
         fi
@@ -346,7 +348,7 @@ for entry in "${entries[@]}"; do
         3) echo "  $name is not published yet; kernels.yml builds it" ;;
         *) echo "!! could not keep the published $name"
            failed=$((failed+1))
-           for kp in "${kpkgs[@]}"; do failures+=("$kp(kernel)"); done ;;
+           for kp in "${kpkgs[@]}" "${kold[@]}"; do failures+=("$kp(kernel)"); done ;;
         esac
         continue
     fi
