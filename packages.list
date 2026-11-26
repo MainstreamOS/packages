@@ -108,8 +108,8 @@ alsa-ucm-conf::local
 mainstream-tas2783-dkms::local
 ckbcomp
 python312
-linux-mainstream::kernel
-linux-mainstream-performance::kernel
+mainstream::kernel
+mainstream-performance::kernel
 nvidia-580xx-utils
 nvidia-580xx-dkms::nvidia-580xx-utils
 opencl-nvidia-580xx::nvidia-580xx-utils

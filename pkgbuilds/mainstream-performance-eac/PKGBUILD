@@ -14,9 +14,9 @@
 : "${_eac_sbsign_key:=}"
 : "${_eac_sbsign_cert:=}"
 
-pkgbase=linux-mainstream-performance-eac
+pkgbase=mainstream-performance-eac
 pkgver=7.3.6.arch1
-pkgrel=2
+pkgrel=3
 pkgdesc='Mainstream OS performance and anti-cheat'
 _archpkg=7.3.6.arch1-1
 _tag=mainstream-performance-7.3.6.arch1-2
@@ -98,7 +98,7 @@ prepare() {
 
   echo "Setting version..."
   echo "-$pkgrel" > localversion.10-pkgrel
-  echo "${pkgbase#linux}" > localversion.20-pkgname
+  echo "-$pkgbase" > localversion.20-pkgname
 
   [[ $_archpkg = "$pkgver"-* ]] || _die "_archpkg $_archpkg is not a build of $pkgver"
   [[ $(make -s kernelversion) = "${pkgver/.arch/-arch}" ]] || _die "$_tag is $(make -s kernelversion), not $pkgver"
@@ -257,7 +257,10 @@ _package() {
     NTSYNC-MODULE
     VIRTUALBOX-GUEST-MODULES
     WIREGUARD-MODULE
+    "linux-$pkgbase=$pkgver"
   )
+  conflicts=("linux-$pkgbase")
+  replaces=("linux-$pkgbase")
   if [ "$_extra_drivers" = yes ]; then
     provides+=(
       V4L2LOOPBACK-MODULE
@@ -302,7 +305,9 @@ _package-headers() {
     zlib
     zstd
   )
-  provides=(LINUX-HEADERS linux-headers)
+  provides=(LINUX-HEADERS linux-headers "linux-$pkgbase-headers=$pkgver")
+  conflicts=("linux-$pkgbase-headers")
+  replaces=("linux-$pkgbase-headers")
   if [ "$_use_llvm_lto" != none ]; then
     depends+=(clang lld llvm)
   fi

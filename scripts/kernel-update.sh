@@ -20,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${ARCH_PACKAGING:=https://gitlab.archlinux.org/archlinux/packaging/packages/linux}"
 : "${FORK_URL:=https://github.com/MainstreamOS/linux.git}"
-RECIPES=(linux-mainstream linux-mainstream-performance linux-mainstream-performance-eac)
+RECIPES=(mainstream mainstream-performance mainstream-performance-eac)
 
 [ -n "${OUT:-}" ] || { echo "kernel-update: OUT is not set" >&2; exit 1; }
 mkdir -p "$OUT"
@@ -75,12 +75,12 @@ prepare() {
     new_ver="${archpkg%-*}"
     version_key "$archpkg" >/dev/null || fail "'$archpkg' is not an Arch kernel package version (7.3.6.arch1-1)."
 
-    old_ver="$(field pkgver linux-mainstream)" old_arch="$(field _archpkg linux-mainstream)"
+    old_ver="$(field pkgver mainstream)" old_arch="$(field _archpkg mainstream)"
     for name in "${RECIPES[@]}"; do
         [ "$(field pkgver "$name")" = "$old_ver" ] && [ "$(field _archpkg "$name")" = "$old_arch" ] \
-            || fail "pkgbuilds/$name is not on Arch's $old_arch like pkgbuilds/linux-mainstream; the recipes have to move together."
+            || fail "pkgbuilds/$name is not on Arch's $old_arch like pkgbuilds/mainstream; the recipes have to move together."
     done
-    version_key "$old_arch" >/dev/null || fail "pkgbuilds/linux-mainstream has _archpkg=$old_arch, not <pkgver>-<pkgrel>."
+    version_key "$old_arch" >/dev/null || fail "pkgbuilds/mainstream has _archpkg=$old_arch, not <pkgver>-<pkgrel>."
 
     if ! newer "$archpkg" "$old_arch"; then
         echo "The recipes are on Arch's $old_arch; $archpkg is not newer, nothing to do."
@@ -102,7 +102,7 @@ prepare() {
     done
     arch_config "$archpkg" "$cfg/new" 2>"$cfg/err" || fail "Arch's config for $archpkg could not be read:" "$(cat "$cfg/err")"
 
-    old_default="$(field _tag linux-mainstream)" old_perf="$(field _tag linux-mainstream-performance)"
+    old_default="$(field _tag mainstream)" old_perf="$(field _tag mainstream-performance)"
     local default_tag="$old_default" perf_tag="$old_perf" srcurl=""
     if [ "$kind" = release ]; then
         stage=rebase
@@ -160,8 +160,8 @@ prepare() {
         echo "KIND=$kind"
         echo "ARCHPKG=$archpkg"
         echo "OLD_ARCHPKG=$old_arch"
-        echo "PKGVER=$(field pkgver linux-mainstream)"
-        echo "PKGREL=$(field pkgrel linux-mainstream)"
+        echo "PKGVER=$(field pkgver mainstream)"
+        echo "PKGREL=$(field pkgrel mainstream)"
         echo "OLD_DEFAULT_TAG=$old_default"
         echo "OLD_PERF_TAG=$old_perf"
         echo "DEFAULT_TAG=$default_tag"
@@ -173,8 +173,8 @@ prepare() {
     {
         echo "Arch's linux $old_arch to $archpkg ($([ "$kind" = release ] && echo "new release" || echo "Arch rebuild, same source"))."
         echo
-        echo "- \`linux-mainstream\`: \`$default_tag\`"
-        echo "- \`linux-mainstream-performance\` and \`-eac\`: \`$perf_tag\`"
+        echo "- \`mainstream\`: \`$default_tag\`"
+        echo "- \`mainstream-performance\` and \`-eac\`: \`$perf_tag\`"
         echo "- Config: Arch's \`config.x86_64\` of $archpkg."
         if [ "$kind" = release ]; then
             echo

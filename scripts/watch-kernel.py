@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the kernel update when Arch's linux is newer than the Arch package linux-mainstream is built on.
+"""Start the kernel update when Arch's linux is newer than the Arch package the mainstream kernel is built on.
 
 A newer linux of the same series in core starts kernel-update.yml in update mode; one in core-testing starts it
 in check mode (build and boot only), so a pick that no longer applies shows up before Arch ships. Each
@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 
 ARCH = "https://archlinux.org/packages/{repo}/x86_64/linux/json/"
-RECIPE = "pkgbuilds/linux-mainstream/PKGBUILD"
+RECIPE = "pkgbuilds/mainstream/PKGBUILD"
 CACHYOS = "https://github.com/CachyOS/linux"
 OMARCHY = "repos/omacom/omarchy-pkgs/contents/pkgbuilds/linux-omarchy/PKGBUILD"
 MARK = "<!-- kernel-watch "
@@ -142,7 +142,7 @@ def body(core, ours, ours_rel, testing, extra):
     date = (core.get("last_update") or core.get("build_date") or "")[:10] or "an unknown date"
     changelog = (f"https://cdn.kernel.org/pub/linux/kernel/v{key[0]}.x/ChangeLog-{stable(key)}" if key[2]
                  else f"https://kernelnewbies.org/Linux_{key[0]}.{key[1]}")
-    lines = [f"Arch's `linux` {full} is in `core` since {date}. `linux-mainstream` is built on Arch's "
+    lines = [f"Arch's `linux` {full} is in `core` since {date}. `mainstream` is built on Arch's "
              f"{ours_full} (`{tag(base)}`)."]
     if testing:
         lines.append(f"`core-testing` already has {testing}, so another update is close.")
@@ -158,7 +158,7 @@ def body(core, ours, ours_rel, testing, extra):
               f"- [ ] Make `mainstream/default-{stable(key)}` on `{tag(key)}` and take the picks again from the new "
               f"series, then `mainstream/performance-{stable(key)}` on it.",
               "- [ ] Tag both (`mainstream-<flavor>-<pkgver>-1`) and push the branches and tags.",
-              "- [ ] Point the `pkgbuilds/linux-mainstream*` recipes at the new tags with "
+              "- [ ] Point the kernel recipes at the new tags with "
               f"`scripts/update-kernel-recipe.sh <tag> {full}`, and take Arch's `config.x86_64` of {full}.",
               "- [ ] Build them with the **Build kernels** workflow and boot the result.",
               "", f"{MARK}{full} -->"]
@@ -240,7 +240,7 @@ def watch(repository, recipe_path=RECIPE):
     if testing:
         parse(testing["pkgver"]), release(testing["pkgrel"])
     print(f"Arch core: linux {full(core)}" + (f", core-testing: {full(testing)}" if testing else "")
-          + f". linux-mainstream is built on {ours}" + (f"-{ours_rel}." if ours_rel else "."))
+          + f". mainstream is built on {ours}" + (f"-{ours_rel}." if ours_rel else "."))
 
     action, version = decide(core, testing, ours, ours_rel)
     if action == "level":

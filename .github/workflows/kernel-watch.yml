@@ -1,6 +1,6 @@
 name: Watch for a new Arch kernel
 
-# linux-mainstream is Arch's kernel plus Mainstream's fixes. A newer Arch linux of
+# The mainstream kernel is Arch's kernel plus Mainstream's fixes. A newer Arch linux of
 # the same series starts kernel-update.yml (an update from core, a build-only check
 # from core-testing); a new series is reported in an issue and taken by hand.
 on:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - name: Act on an Arch linux newer than the one linux-mainstream is built on
+      - name: Act on an Arch linux newer than the one the mainstream kernel is built on
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/watch-kernel.py

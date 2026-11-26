@@ -43,11 +43,11 @@ archpkg="$1"
     || die "'$archpkg' is not an Arch kernel package version (7.3.6.arch1-1)"
 new_ver="${BASH_REMATCH[1]}" new_series="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
 
-old_ver="$(field pkgver linux-mainstream)"
-old_default="$(field _tag linux-mainstream)"
-old_perf="$(field _tag linux-mainstream-performance)"
-[ "$(field pkgver linux-mainstream-performance)" = "$old_ver" ] \
-    || die "linux-mainstream and linux-mainstream-performance are on different Arch versions"
+old_ver="$(field pkgver mainstream)"
+old_default="$(field _tag mainstream)"
+old_perf="$(field _tag mainstream-performance)"
+[ "$(field pkgver mainstream-performance)" = "$old_ver" ] \
+    || die "mainstream and mainstream-performance are on different Arch versions"
 [[ "$old_ver" =~ ^([0-9]+)\.([0-9]+)(\.[0-9]+)?\.arch[0-9]+$ ]] || die "recipe pkgver '$old_ver' is not Arch's form"
 [ "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" = "$new_series" ] \
     || die "$old_ver to $new_ver is a new series; its picks are taken again by hand, not rebased"
@@ -205,10 +205,10 @@ tag_message() {
     local flavor="$1" tag="$2"
     case "$flavor" in
     default)
-        printf 'linux-mainstream %s, fork revision %s\n\nBase: %s (Arch package %s).\nBranch: %s.\n' \
+        printf 'mainstream %s, fork revision %s\n\nBase: %s (Arch package %s).\nBranch: %s.\n' \
             "$new_ver" "${tag##*-}" "$new_base" "$archpkg" "$new_default_branch" ;;
     performance)
-        printf 'linux-mainstream-performance and linux-mainstream-performance-eac %s, fork revision %s\n\nBase: %s plus the speed layer, BORE and dkms-clang.\nBranch: %s.\n' \
+        printf 'mainstream-performance and mainstream-performance-eac %s, fork revision %s\n\nBase: %s plus the speed layer, BORE and dkms-clang.\nBranch: %s.\n' \
             "$new_ver" "${tag##*-}" "$default_tag" "$new_perf_branch" ;;
     esac
 }

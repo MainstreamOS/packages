@@ -4,8 +4,8 @@
 # and writes pkgver, pkgrel, _archpkg, _tag and _tag_sha256 into the recipes the tag is for. It never
 # commits; review the diff and commit it yourself.
 #
-#   <tag>      mainstream-default-<pkgver>-<rev>      for linux-mainstream
-#              mainstream-performance-<pkgver>-<rev>  for linux-mainstream-performance and -eac
+#   <tag>      mainstream-default-<pkgver>-<rev>      for mainstream
+#              mainstream-performance-<pkgver>-<rev>  for mainstream-performance and -eac
 #              <pkgver> is Arch's form (7.3.5.arch1), <rev> counts the fork's revisions of that release.
 #   <archpkg>  the Arch package the tag is based on (7.3.5.arch1-2); needed when pkgver changes,
 #              otherwise the recipe's value is kept.
@@ -32,8 +32,8 @@ if [ -n "$archpkg" ]; then
     [[ "$archpkg" =~ ^${ver//./\\.}-[1-9][0-9]*(\.[0-9]+)?$ ]] || die "'$archpkg' is not an Arch package of $ver (<pkgver>-<pkgrel>)"
 fi
 case "$flavor" in
-    default) recipes=(linux-mainstream) ;;
-    performance) recipes=(linux-mainstream-performance linux-mainstream-performance-eac) ;;
+    default) recipes=(mainstream) ;;
+    performance) recipes=(mainstream-performance mainstream-performance-eac) ;;
 esac
 for name in "${recipes[@]}"; do
     [ -f "$ROOT/pkgbuilds/$name/PKGBUILD" ] || die "missing pkgbuilds/$name/PKGBUILD"

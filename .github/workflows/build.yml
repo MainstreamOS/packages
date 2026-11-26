@@ -15,7 +15,9 @@ on:
       - packages.list
       - build-repo.sh
       - pkgbuilds/**
-      - '!pkgbuilds/linux-mainstream*/**'   # kernels.yml builds these
+      - '!pkgbuilds/mainstream/**'   # kernels.yml builds these
+      - '!pkgbuilds/mainstream-performance/**'
+      - '!pkgbuilds/mainstream-performance-eac/**'
       - scripts/**
       - .github/workflows/build.yml
 

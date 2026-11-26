@@ -14,7 +14,9 @@ on:
   push:
     branches: [master, main]
     paths:
-      - pkgbuilds/linux-mainstream*/**
+      - pkgbuilds/mainstream/**
+      - pkgbuilds/mainstream-performance/**
+      - pkgbuilds/mainstream-performance-eac/**
       - packages.list
       - build-kernel.sh
       - scripts/boot-test-kernel.sh
