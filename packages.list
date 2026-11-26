@@ -8,9 +8,12 @@
 #                       build keeps its published packages (headers too)
 # Blank lines and #-comments are ignored.
 #
-# Every entry here is FOSS and verified against the AUR. Proprietary or
-# non-redistributable packages must NOT be added (e.g. ttf-google-sans /
-# Google Sans is proprietary; DaVinci Resolve, Plex). FOSS only.
+# Every entry here is FOSS and verified against the AUR, with one exception:
+# the legacy NVIDIA driver GTX 900 to Titan V cards need (the nvidia-580xx set).
+# It is proprietary, but NVIDIA's license lets an operating system distributor
+# ship the unmodified driver, as Arch does with its own NVIDIA packages. Nothing
+# else proprietary or non-redistributable may be added (e.g. ttf-google-sans /
+# Google Sans is proprietary; DaVinci Resolve, Plex).
 
 # ── Default apps (Nautilus extensions + mpv scripts) ──
 nautilus-copy-path
@@ -107,6 +110,12 @@ ckbcomp
 python312
 linux-mainstream::kernel
 linux-mainstream-performance::kernel
+nvidia-580xx-utils
+nvidia-580xx-dkms::nvidia-580xx-utils
+opencl-nvidia-580xx::nvidia-580xx-utils
+lib32-nvidia-580xx-utils
+nvidia-580xx-settings
+libxnvctrl-580xx::nvidia-580xx-settings
 
 # ── Shell (heavy compile; dots installs this prebuilt, source build as fallback) ──
 mainstream-quickshell-git::dots

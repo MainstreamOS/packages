@@ -233,6 +233,73 @@ EOF
     esac
 }
 
+# The legacy NVIDIA drivers must not answer for names no package in the
+# repositories owns, since pacman resolves those by provides in repository order.
+generic_provides=(nvidia vulkan-driver opengl-driver opencl-driver lib32-vulkan-driver lib32-opengl-driver lib32-opencl-driver)
+# A Vulkan driver they stop providing is replaced by a dependency on Mesa's software one,
+# so a package that needs one still finds it.
+swrast_for="vulkan-driver=vulkan-swrast lib32-vulkan-driver=lib32-vulkan-swrast"
+legacy_nvidia=('nvidia-[0-9][0-9][0-9]xx-*' 'lib32-nvidia-[0-9][0-9][0-9]xx-*' 'opencl-nvidia-[0-9][0-9][0-9]xx'
+               'lib32-opencl-nvidia-[0-9][0-9][0-9]xx' 'libxnvctrl-[0-9][0-9][0-9]xx')
+# "<package> <dependency>" for each dependency the strip added, for the check after the builds.
+swrast_added="$WORK/swrast-added"
+is_legacy_nvidia() {
+    local p
+    for p in "${legacy_nvidia[@]}"; do
+        # shellcheck disable=SC2254
+        case "$1" in $p) return 0 ;; esac
+    done
+    return 1
+}
+strip_generic_provides() {
+    local name="$1" pkgbuild="$2/PKGBUILD"
+    is_legacy_nvidia "$name" && [ -f "$pkgbuild" ] || return 0
+    awk -v strip=" ${generic_provides[*]} " -v swrast=" $swrast_for " -v added="$swrast_added" '
+        function bare(t) { gsub(/["\047]/, "", t); sub(/[<>=].*/, "", t); return t }
+        /^package_[^(]*\(\)/ { cur = $0; sub(/^package_/, "", cur); sub(/[[:space:]]*\(.*/, "", cur) }
+        /^[[:space:]]*provides=\(/ { inp = 1; match($0, /^[[:space:]]*/); ind = substr($0, 1, RLENGTH); deps = "" }
+        inp {
+            pre = ""; body = $0; post = ""
+            if ((i = index(body, "provides=(")) > 0) { pre = substr(body, 1, i + 9); body = substr(body, i + 10) }
+            else { match(body, /^[[:space:]]*/); pre = substr(body, 1, RLENGTH); body = substr(body, RLENGTH + 1) }
+            if ((j = index(body, ")")) > 0) { post = substr(body, j); body = substr(body, 1, j - 1); inp = 0 }
+            n = split(body, tok, /[[:space:]]+/); out = ""
+            for (k = 1; k <= n; k++) {
+                if (tok[k] == "") continue
+                v = bare(tok[k])
+                if (index(strip, " " v " ") == 0) { out = out (out == "" ? "" : " ") tok[k]; continue }
+                if ((w = index(swrast, " " v "=")) > 0) {
+                    d = substr(swrast, w + length(v) + 2); sub(/ .*/, "", d)
+                    deps = deps " \047" d "\047"; print cur, d >> added
+                }
+            }
+            print pre out post
+            if (!inp && deps != "") print ind "depends+=(" substr(deps, 2) ")"
+            next
+        }
+        { print }' "$pkgbuild" > "$pkgbuild.strip" || { rm -f "$pkgbuild.strip"; return 1; }
+    if cmp -s "$pkgbuild" "$pkgbuild.strip"; then
+        echo "  patch: $name provides none of ${generic_provides[*]}"
+    else
+        echo "  patch: $name no longer provides any of ${generic_provides[*]}"
+    fi
+    mv -f "$pkgbuild.strip" "$pkgbuild"
+}
+# What a built package still provides of those, and the added dependencies it lacks.
+generic_provides_in() {
+    bsdtar -xOf "$1" .PKGINFO 2>/dev/null | sed -n 's/^provides = //p' | sed 's/[<>=].*//' \
+        | grep -xF -f <(printf '%s\n' "${generic_provides[@]}") | tr '\n' ' '
+}
+swrast_missing_in() {  # <package file> <package name>
+    local deps name dep
+    deps="$(bsdtar -xOf "$1" .PKGINFO 2>/dev/null | sed -n 's/^depend = //p' | sed 's/[<>=].*//')"
+    [ -r "$swrast_added" ] || return 0
+    while read -r name dep; do
+        [ "$name" = "$2" ] && ! grep -qxF "$dep" <<<"$deps" && printf '%s ' "$dep"
+    done < "$swrast_added"
+    return 0
+}
+
 build_package() {
     local dir="$1"
     (
@@ -348,6 +415,7 @@ for entry in "${entries[@]}"; do
     check=()
     case "$nocheck_pkgs" in *" $name "*) check=(--nocheck) ;; esac
     patch_pkgbuild "$name" "$dir"
+    strip_generic_provides "$name" "$dir"
     import_pgp_keys "$dir"
     extra_dep=""; mkenv=()
 
@@ -414,6 +482,9 @@ for entry in "${entries[@]}"; do
     fi
     # Nearly 5 GiB that every later package in the list would build around.
     [ -n "$extra_dep" ] && { sudo pacman -Rns --noconfirm "$extra_dep" >/dev/null 2>&1 || true; }
+    # The recipe's sources and staging trees are not needed again, and an NVIDIA
+    # driver's alone come to several GiB.
+    rm -rf "${dir:?}"
 done
 
 # Keep only the packages named in packages.list. Split AUR bases emit sibling
@@ -442,6 +513,19 @@ for f in "$OUTDIR"/*:*.pkg.tar.zst; do
     echo "  epoch package: $(basename "$f") -> $(basename "$safe")"
     mv -f "$f" "$safe"
     [ -e "$f.sig" ] && mv -f "$f.sig" "$safe.sig"
+done
+
+# A legacy NVIDIA package the strip did not take effect on is not published; a copy
+# already published stays.
+for f in "$OUTDIR"/*.pkg.tar.zst; do
+    pn="$(pacman -Qpq "$f" 2>/dev/null)"
+    is_legacy_nvidia "$pn" || continue
+    why=""
+    bad="$(generic_provides_in "$f")"; [ -n "$bad" ] && why="still provides ${bad% }"
+    bad="$(swrast_missing_in "$f" "$pn")"; [ -n "$bad" ] && why="${why:+$why and }does not depend on ${bad% }"
+    [ -z "$why" ] && continue
+    echo "!! $pn $why, so this build is not published"
+    rm -f "$f" "$f.sig"; failed=$((failed+1)); failures+=("$pn(provides)")
 done
 
 # The db is rebuilt from out/ alone, so a package that failed would drop out of

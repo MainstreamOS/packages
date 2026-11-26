@@ -1,7 +1,8 @@
 # MainstreamOS `[mainstream]` package repo
 
 A signed pacman repository of FOSS packages that would otherwise come from the
-AUR. It exists so MainstreamOS installs **without an AUR helper** (no yay/paru):
+AUR, plus the legacy NVIDIA driver GTX 900 to Titan V cards need. It exists so
+MainstreamOS installs **without an AUR helper** (no yay/paru):
 
 - the **dots-hyprland** installer adds this repo and uses `pacman -S`
 - **archiso** can consume the same outputs instead of rebuilding from the AUR
@@ -14,7 +15,7 @@ under a fixed tag, giving pacman a stable `Server` URL.
 
 | File | Purpose |
 |------|---------|
-| `packages.list` | Source of truth: one AUR package per line (`name` or `name::pkgbase`). **FOSS only** — no proprietary/non-redistributable packages. |
+| `packages.list` | Source of truth: one AUR package per line (`name` or `name::pkgbase`). **FOSS only**, except the legacy NVIDIA driver (580xx), which NVIDIA's license lets an OS distributor ship unmodified. No other proprietary or non-redistributable packages. |
 | `build-repo.sh` | Verifies upstream source checksums and PGP signatures, builds every listed package (no AUR helper), signs them, and assembles `out/mainstream.db` + `*.pkg.tar.zst`. |
 | `scripts/repo_safety.py` | Assigns rebuild subreleases, verifies signed outputs, and publishes immutable packages with a retention ledger. |
 | `scripts/mirror-repo.sh` | Checks existing mirror files, uploads missing packages, verifies them, then updates databases. |
@@ -105,7 +106,8 @@ Run inside an Arch environment as a non-root user with passwordless `sudo pacman
 Append it to `packages.list` (use `name::pkgbase` if the AUR git repo name
 differs from the package name) and push — CI rebuilds and republishes. **Verify
 the license is FOSS first**: proprietary fonts/apps (e.g. `ttf-google-sans`,
-DaVinci Resolve, Plex) must not be hosted/redistributed.
+DaVinci Resolve, Plex) must not be hosted/redistributed. The legacy NVIDIA
+driver is the one exception.
 
 Use `name::mainstream-git` for a standalone recipe maintained in
 `MainstreamOS/name` on its `mainstream` branch. The builder clones the recipe,
