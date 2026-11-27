@@ -110,6 +110,7 @@ ckbcomp
 python312
 mainstream::kernel
 mainstream-performance::kernel
+mainstream-performance-eac::kernel
 nvidia-580xx-utils
 nvidia-580xx-dkms::nvidia-580xx-utils
 opencl-nvidia-580xx::nvidia-580xx-utils

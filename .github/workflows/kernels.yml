@@ -95,15 +95,40 @@ jobs:
           docker exec -e GH_TOKEN -e GITHUB_REPOSITORY arch runuser -u builder -- \
             python scripts/repo_safety.py snapshot "$GITHUB_WORKSPACE/published-assets.json"
 
+      - name: Stage the anti-cheat signing key
+        # The anti-cheat kernel is signed with the Secure Boot signer, whose certificate the
+        # repository carries. The key is written for this one build and removed after it.
+        if: matrix.kernel == 'mainstream-performance-eac'
+        env:
+          EAC_SIGNER_KEY: ${{ secrets.EAC_SIGNER_KEY }}
+        run: |
+          if [ -z "$EAC_SIGNER_KEY" ]; then
+            echo "::error title=No anti-cheat signing key::add the EAC_SIGNER_KEY secret; the anti-cheat kernel is never built unsigned"
+            exit 1
+          fi
+          docker exec -e EAC_SIGNER_KEY arch bash -c '
+            install -d -m700 -o builder -g builder /home/builder/eac
+            (umask 077; printf "%s\n" "$EAC_SIGNER_KEY" > /home/builder/eac/signer.key)
+            chown builder:builder /home/builder/eac/signer.key'
+
       - name: Build ${{ matrix.kernel }}
         env:
           GPGKEY: ${{ secrets.GPG_KEY_ID }}
         run: |
+          sign=()
+          if [ "${{ matrix.kernel }}" = mainstream-performance-eac ]; then
+            sign=(_eac_sbsign_key=/home/builder/eac/signer.key
+                  _eac_sbsign_cert="$GITHUB_WORKSPACE/keys/secure-boot/mainstream-secure-boot-signer.crt")
+          fi
           docker exec -e GPGKEY arch runuser -u builder -- env \
             CI=true PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" OUTDIR="$GITHUB_WORKSPACE/out" \
-            BUILDDIR=/build MAKEFLAGS="-j$(nproc)" \
+            BUILDDIR=/build MAKEFLAGS="-j$(nproc)" "${sign[@]}" \
             bash build-kernel.sh build "${{ matrix.kernel }}"
           df -h / /mnt || true
+
+      - name: Remove the anti-cheat signing key
+        if: always() && matrix.kernel == 'mainstream-performance-eac'
+        run: docker exec arch rm -rf /home/builder/eac || true
 
       - name: Boot ${{ matrix.kernel }}
         # A kernel that does not boot, or whose modules do not load cleanly, is not published.
