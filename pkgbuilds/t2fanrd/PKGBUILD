@@ -1,6 +1,6 @@
 pkgname=t2fanrd
 pkgver=r21.01df44d
-pkgrel=1
+pkgrel=2
 _commit=01df44d1bcd555647e932c06086c411c984d197d
 pkgdesc='Fan control daemon for Macs with the Apple T2 chip'
 arch=('x86_64')
@@ -13,7 +13,7 @@ replaces=('t2fand')
 options=('!debug' '!lto')
 source=("$pkgname::git+$url.git#commit=$_commit" 't2fanrd.service')
 sha256sums=('1a488f6fe6070e047847ec07773f27776aed0ce4757f74516d51b7a2d02008b6'
-            '4d63a9c04f57d933875acf809b99fbd048970af8dcd5b17260624f7b414f7e03')
+            '57d30c12820700e134e95d5ed464754b5809bae7a6ec65bccaa2cab0620563a6')
 
 prepare() {
     cd "$pkgname"
