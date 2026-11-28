@@ -6,6 +6,8 @@
 #   <pkgname>::mainstream-git  MainstreamOS/<pkgname>, mainstream branch
 #   <pkgbase>::kernel   pkgbuilds/<pkgbase>, built only by kernels.yml; the main
 #                       build keeps its published packages (headers too)
+#   <pkgbase>::signed   pkgbuilds/<pkgbase>, signed with the Secure Boot signer and
+#                       built only by kernels.yml, kept like a kernel
 # Blank lines and #-comments are ignored.
 #
 # Every entry here is FOSS and verified against the AUR, with one exception:
@@ -111,6 +113,8 @@ python312
 mainstream::kernel
 mainstream-performance::kernel
 mainstream-performance-eac::kernel
+systemd-boot-mainstream-signed::signed
+mainstream-eac-signing-key::local
 nvidia-580xx-utils
 nvidia-580xx-dkms::nvidia-580xx-utils
 opencl-nvidia-580xx::nvidia-580xx-utils

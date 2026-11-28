@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# build-kernel.sh: build the kernels that packages.list marks <pkgbase>::kernel and add them to the
-# signed [mainstream] repo. Used by .github/workflows/kernels.yml; build-repo.sh only keeps their
+# build-kernel.sh: build the kernels and signed boot files that packages.list marks <pkgbase>::kernel
+# and <pkgbase>::signed, and add them to the signed [mainstream] repo. Used by .github/workflows/kernels.yml; build-repo.sh only keeps their
 # published builds.
 #
 #   build-kernel.sh plan              JSON list of listed kernels whose recipe version is not live
@@ -21,7 +21,7 @@ LIST="$ROOT/packages.list"
     || { echo "a readable published asset snapshot is required" >&2; exit 1; }
 
 kernels() {
-    sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | sed -nE 's/^([^:]+)::kernel$/\1/p'
+    sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//' "$LIST" | sed -nE 's/^([^:]+)::(kernel|signed)$/\1/p'
 }
 
 srcinfo() {
@@ -52,7 +52,7 @@ plan() {
 
 build() {
     local name="$1" dir deps d official=() sign=()
-    kernels | grep -qxF "$name" || { echo "$name is not listed as $name::kernel" >&2; return 1; }
+    kernels | grep -qxF "$name" || { echo "$name is not listed as $name::kernel or $name::signed" >&2; return 1; }
     dir="$(mktemp -d)/$name"
     srcinfo "$name" "$dir" || return 1
     deps="$(sed -nE 's/^[[:space:]]*(depends|makedepends|checkdepends) = //p' "$dir/.SRCINFO" \

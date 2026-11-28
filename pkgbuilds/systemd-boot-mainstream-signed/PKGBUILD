@@ -1,0 +1,47 @@
+: "${_eac_sbsign_key:=}"
+: "${_eac_sbsign_cert:=}"
+
+pkgname=systemd-boot-mainstream-signed
+_sdver=262.2
+_sdrel=1
+pkgver=${_sdver}_${_sdrel}
+pkgrel=1
+pkgdesc='systemd-boot signed with the Mainstream OS Secure Boot key, for the anti-cheat boot entry'
+arch=('x86_64')
+url='https://github.com/MainstreamOS/packages'
+license=('LGPL-2.1-or-later')
+makedepends=('sbsigntools')
+options=('!strip' '!debug')
+source=("https://archive.archlinux.org/packages/s/systemd/systemd-${_sdver}-${_sdrel}-x86_64.pkg.tar.zst")
+noextract=("systemd-${_sdver}-${_sdrel}-x86_64.pkg.tar.zst")
+sha256sums=('38a9c2d5e4f5db9bbb2c58d274de973d6637c87eba81c19c7a1b4fb1aca0b513')
+
+_die() { error "$@"; exit 1; }
+
+_eac_sbsign_args=()
+if [ -n "$_eac_sbsign_key" ] && [ -n "$_eac_sbsign_cert" ]; then
+  [ -e "$_eac_sbsign_cert" ] || _die "Failed to find file $_eac_sbsign_cert"
+  _eac_sbsign_cert="$(realpath "$_eac_sbsign_cert")"
+  if [[ $_eac_sbsign_key = pkcs11:* ]]; then
+    _eac_sbsign_args=(--provider default --provider pkcs11prov)
+    makedepends+=(libp11)
+  else
+    [ -e "$_eac_sbsign_key" ] || _die "Failed to find file $_eac_sbsign_key"
+    _eac_sbsign_key="$(realpath "$_eac_sbsign_key")"
+  fi
+fi
+
+prepare() {
+  if [ -z "$_eac_sbsign_key" ] || [ -z "$_eac_sbsign_cert" ]; then
+    _die "_eac_sbsign_key and _eac_sbsign_cert have to be set, an unsigned systemd-boot does not pass the Easy Anti-Cheat checks"
+  fi
+  bsdtar -xf "systemd-${_sdver}-${_sdrel}-x86_64.pkg.tar.zst" usr/lib/systemd/boot/efi/systemd-bootx64.efi
+}
+
+package() {
+  install -dm755 "$pkgdir/usr/lib/mainstream/anticheat"
+  sbsign "${_eac_sbsign_args[@]}" --key "$_eac_sbsign_key" --cert "$_eac_sbsign_cert" \
+    --output "$pkgdir/usr/lib/mainstream/anticheat/systemd-bootx64.efi" \
+    usr/lib/systemd/boot/efi/systemd-bootx64.efi
+  chmod 644 "$pkgdir/usr/lib/mainstream/anticheat/systemd-bootx64.efi"
+}

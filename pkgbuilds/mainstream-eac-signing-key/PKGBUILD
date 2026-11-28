@@ -1,0 +1,23 @@
+pkgname=mainstream-eac-signing-key
+pkgver=1
+pkgrel=1
+pkgdesc='Mainstream OS Secure Boot CA certificate, for enrollment into the Secure Boot db'
+arch=('any')
+url='https://github.com/MainstreamOS/packages'
+license=('GPL-3.0-or-later')
+makedepends=('openssl')
+source=('mainstream-secure-boot-ca.crt')
+sha256sums=('05a0c7bf14d2b839ffa37428ad1f826be1f218d13b2b6d0c1449b8cbd74f7888')
+_fingerprint=5bb05c24b9aed05fb4ba211a9a193b1b0ae5a29913ea48bc7ad0d3c1654d9546
+
+build() {
+    openssl x509 -in mainstream-secure-boot-ca.crt -outform DER -out mainstream-secure-boot-ca.der
+    if [ "$(sha256sum mainstream-secure-boot-ca.der | cut -d' ' -f1)" != "$_fingerprint" ]; then
+        error "mainstream-secure-boot-ca.crt does not have the fingerprint $_fingerprint"
+        return 1
+    fi
+}
+
+package() {
+    install -Dm644 -t "$pkgdir/usr/share/mainstream-eac" mainstream-secure-boot-ca.crt mainstream-secure-boot-ca.der
+}

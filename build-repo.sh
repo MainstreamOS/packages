@@ -326,8 +326,9 @@ build_package() {
 for entry in "${entries[@]}"; do
     name="${entry%%::*}"
     base="${entry##*::}"          # equals name when there is no ::
-    if [ "$base" = kernel ]; then
-        # Kernels take hours and about 30 GB, so only .github/workflows/kernels.yml builds them.
+    if [ "$base" = kernel ] || [ "$base" = signed ]; then
+        # Kernels take hours and about 30 GB, and signed boot files need the Secure Boot
+        # signer, so only .github/workflows/kernels.yml builds them.
         # This run keeps whatever build is live, at any version, and never fails over a missing one.
         echo "════ $name  (kernel: published build only) ════"
         dir="$WORK/$name"; rm -rf "$dir"

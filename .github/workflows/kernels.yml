@@ -17,6 +17,7 @@ on:
       - pkgbuilds/mainstream/**
       - pkgbuilds/mainstream-performance/**
       - pkgbuilds/mainstream-performance-eac/**
+      - pkgbuilds/systemd-boot-mainstream-signed/**
       - packages.list
       - build-kernel.sh
       - scripts/boot-test-kernel.sh
@@ -98,7 +99,7 @@ jobs:
       - name: Stage the anti-cheat signing key
         # The anti-cheat kernel is signed with the Secure Boot signer, whose certificate the
         # repository carries. The key is written for this one build and removed after it.
-        if: matrix.kernel == 'mainstream-performance-eac'
+        if: matrix.kernel == 'mainstream-performance-eac' || matrix.kernel == 'systemd-boot-mainstream-signed'
         env:
           EAC_SIGNER_KEY: ${{ secrets.EAC_SIGNER_KEY }}
         run: |
@@ -116,10 +117,11 @@ jobs:
           GPGKEY: ${{ secrets.GPG_KEY_ID }}
         run: |
           sign=()
-          if [ "${{ matrix.kernel }}" = mainstream-performance-eac ]; then
-            sign=(_eac_sbsign_key=/home/builder/eac/signer.key
-                  _eac_sbsign_cert="$GITHUB_WORKSPACE/keys/secure-boot/mainstream-secure-boot-signer.crt")
-          fi
+          case "${{ matrix.kernel }}" in
+            mainstream-performance-eac|systemd-boot-mainstream-signed)
+              sign=(_eac_sbsign_key=/home/builder/eac/signer.key
+                    _eac_sbsign_cert="$GITHUB_WORKSPACE/keys/secure-boot/mainstream-secure-boot-signer.crt") ;;
+          esac
           docker exec -e GPGKEY arch runuser -u builder -- env \
             CI=true PUBLISHED_ASSETS="$GITHUB_WORKSPACE/published-assets.json" OUTDIR="$GITHUB_WORKSPACE/out" \
             BUILDDIR=/build MAKEFLAGS="-j$(nproc)" "${sign[@]}" \
@@ -127,12 +129,13 @@ jobs:
           df -h / /mnt || true
 
       - name: Remove the anti-cheat signing key
-        if: always() && matrix.kernel == 'mainstream-performance-eac'
+        if: always() && (matrix.kernel == 'mainstream-performance-eac' || matrix.kernel == 'systemd-boot-mainstream-signed')
         run: docker exec arch rm -rf /home/builder/eac || true
 
       - name: Boot ${{ matrix.kernel }}
         # A kernel that does not boot, or whose modules do not load cleanly, is not published.
         run: |
+          grep -qx "${{ matrix.kernel }}::kernel" packages.list || { echo "not a kernel, nothing to boot"; exit 0; }
           docker exec arch runuser -u builder -- bash -c \
             'for pkg in out/"$1"-[0-9]*.pkg.tar.zst; do bash scripts/boot-test-kernel.sh "$pkg" || exit 1; done' \
             _ "${{ matrix.kernel }}"
